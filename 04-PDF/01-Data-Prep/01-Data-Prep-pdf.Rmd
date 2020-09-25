@@ -1,19 +1,10 @@
 ---
-title: "Realized Higher Moment Measures"
-description: |
-  Part 1: Exploratory Data Analysis & Data Preprocessing
-author:
-  - name: Alexis Solis Cancino
-    url: alexis.solisc@gmail.com
-    affiliation: ITAM
-date: "`r Sys.Date()`"
+title: "Untitled"
+author: "Alexis Solis"
+date: "9/25/2020"
 output: 
-  distill::distill_article:
-    toc: true
-    toc_depth: 2
-    css: "D:/11-Estancia/Finance-Thesis/05-Resources/styles.css"
-editor_options: 
-  chunk_output_type: console
+  pdf_document:
+    latex_engine: xelatex
 ---
 
 ```{r setup, include=FALSE}

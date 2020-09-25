@@ -1,0 +1,527 @@
+---
+title: "Realized Higher Moment Measures"
+description: |
+  Exploring Realized Higher Moment Measures on the S&P/BMV IPC Index
+author:
+  - name: Alexis Solis Cancino
+    affiliation: ITAM
+date: "`r Sys.Date()`"
+output:
+  distill::distill_article:
+    toc: true
+    toc_depth: 2
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  
+  # Places figures on their own pages
+  fig.pos = 'p',
+  
+  # Figure resolution and size
+  out.width = '100%',
+  dpi = 400,
+  
+  # Latex figure environment
+  fig.env = "figure"
+)
+
+library(xtable) # Creates tables that follow OUP guidelines; other options, such as kable, may also be workable
+
+
+# --- Load the libraries! ---
+
+# Data Wrangling
+library(tidyverse)
+library(lubridate)
+library(skimr)
+# library(tidylog)
+
+# Time Series
+library(timetk)
+library(tidyquant)
+library(tibbletime)
+library(tsibble)
+library(hms)
+library(modeltime)
+library(tidymodels)
+
+# Visualization
+library(ggthemes)
+library(scales)
+library(ghibli)
+library(cowplot)
+library(plotly)
+library(gt)
+
+# Reproducibility
+library(usethis)
+
+
+# Speed
+library(data.table)
+library(dtplyr)
+library(arrow)
+
+
+
+
+
+# --- Setup the ggplot theme ---
+source(file = "D:/01-Data-Science/03-Helper-Scripts/ggplot2_themes.R")
+```
+
+
+```{r}
+# Read the data
+IPC_fr <- arrow::read_parquet("D:/01-Data-Science/01-RStudio-Projects/Finance-Research/01_data/IPC_fr.parquet")
+```
+
+
+Problems with the data:
+
+1. We don't have the same number of datapoints (trades) per day.
+
+```{r}
+IPC_fr %>%
+  count(tidy_date) %>% 
+  arrange(n)
+  # ggplot(aes(x = tidy_date, y = n)) +
+  # geom_col() +
+  # theme_roboto()
+```
+
+2. We don't have the same number of datapoints (trades) per time (i.e. hour:minute).
+
+```{r}
+IPC_fr %>% count(tidy_time) %>% 
+  arrange(n)
+#   ggplot(aes(x = tidy_time, y = n)) +
+#   geom_col() +
+#   theme_roboto()
+```
+
+
+# Realized Variance
+
+
+For this section, we'll transform our dataset into a `timetibble` object, so that time filtering and wrangling of the data is easier. We'll call the new dataset `IPC_tbl_tm` (IPC tibble time).
+
+```{r}
+IPC_tbl_tm <- IPC_fr %>%  
+  tibbletime::as_tbl_time(index = tidy_date)
+
+IPC_tbl_tm
+```
+
+We can now compute the realized variance for each day:
+
+```{r}
+RVs <- IPC_tbl_tm %>% 
+  mutate(log_ret_sq = log_ret^2) %>% 
+  group_by(tidy_date) %>% 
+  summarise(RV = sum(log_ret_sq),
+            RV_an = 252 * sqrt(RV)) %>% 
+  
+  # Get rid of date "2001-09-12", which has a 0 RV.
+  filter(!RV == 0)
+
+RVs
+```
+
+
+Now let's plot the RVs:
+
+```{r, layout="l-body-outset", fig.width=8, fig.asp=0.618}
+rv_plot <- RVs %>% 
+  # filter_time("1996" ~ "end") %>%
+  ggplot(mapping = aes(x = tidy_date, y = RV_an)) +
+  geom_point(color = amazing_colors[1], alpha = 0.5) +
+  # geom_smooth(method = "loess") +
+  labs(
+    title = "Intraday Volatility for the S&P/BMV IPC Index",
+    subtitle = "As measured by the annualized daily-realized-variance",
+    x = NULL,
+    y = "Annualized RV"
+    ) +
+  scale_y_continuous(labels = scales::number_format()) +
+  scale_x_date(date_labels = "%Y", date_breaks = "2 years") +
+  geom_smooth(colour = amazing_colors[2])
+
+rv_plot
+```
+
+
+```{r}
+# ggsave(
+#   filename = "signature-plot.png",
+#   units = "in",
+#   width = 8 * 1.61803398875,
+#   height = 8,
+#   path = "D:/01-Data-Science/01-RStudio-Projects/Finance-Research/03_images/",
+#   dpi = 400,
+#   device = "png"
+# )
+```
+
+
+## RV Sparse
+
+An _RV Sparse_ estimator consists of calculating the realized variance but with a sample that is less frequent than the 1-minute grid. Instead, it is sampled in an _s_-minute grid (where $s \geq 1$).
+
+Here, we will use different combinations of $s$ such as `s = 5`, `s = 10`, `s = 15`, and `s = 30`. In order to sample in an _s_-minute grid, we make use of the following auxiliary rolling-functions:
+
+```{r}
+# # For a 5-minute grid:
+# five_rolling_sum <- rollify(.f = ~sum(.x), window = 5)
+# 
+# # For a 10-minute grid:
+# ten_rolling_sum <- rollify(.f = ~sum(.x), window = 10)
+# 
+# # For a 15-minute grid:
+# fifteen_rolling_sum <- rollify(.f = ~sum(.x), window = 15)
+# 
+# # For a 30-minute grid:
+# thirty_rolling_sum <- rollify(.f = ~sum(.x), window = 30)
+```
+
+
+
+```{r}
+# For a 5-minute grid:
+five_roll_sum <- slidify(
+  .f = ~sum(.x), 
+  .period = 5, 
+  .align = "right")
+
+# For a 10-minute grid:
+ten_roll_sum <- slidify(
+  .f = ~sum(.x), 
+  .period = 10, 
+  .align = "right")
+
+
+# For a 15-minute grid:
+fifteen_roll_sum <- slidify(
+  .f = ~sum(.x), 
+  .period = 15, 
+  .align = "right")
+
+
+
+# For a 30-minute grid:
+thirty_roll_sum <- slidify(
+  .f = ~sum(.x), 
+  .period = 30, 
+  .align = "right")
+```
+
+
+We can now subset the data to a five-minute grid. We'll call this new data `IPC_5m`.
+
+
+```{r}
+IPC_5m <- IPC_tbl_tm %>% 
+  mutate(ret_5m = five_roll_sum(log_ret)) %>% 
+  select(tidy_date, tidy_time, ret_5m) %>%
+  filter(!is.na(ret_5m)) %>% 
+  slice(seq(1, nrow(IPC_tbl_tm), by = 5))
+```
+
+
+```{r}
+RV_s5 <- IPC_5m %>% 
+  mutate(log_ret_sq = ret_5m^2) %>% 
+  group_by(tidy_date) %>% 
+  summarise(RVs5 = sum(log_ret_sq),
+            RVs5_an = 252 * sqrt(RVs5))
+```
+
+Now we repeat the process for a $s = 10$ grid:
+
+```{r}
+IPC_10m <- IPC_tbl_tm %>%
+  mutate(ret_10m = ten_roll_sum(log_ret)) %>% 
+  select(tidy_date, tidy_time, ret_10m) %>%
+  filter(!is.na(ret_10m)) %>% 
+  slice(seq(1, nrow(IPC_tbl_tm), by = 10))
+```
+
+
+```{r}
+RV_s10 <- IPC_10m %>% 
+  mutate(log_ret_sq = ret_10m^2) %>% 
+  group_by(tidy_date) %>% 
+  summarise(RVs10 = sum(log_ret_sq),
+            RVs10_an = 252 * sqrt(RVs10))
+```
+
+And then again, for the $s = 15$ grid:
+
+```{r}
+IPC_15m <- IPC_tbl_tm %>% 
+  mutate(ret_15m = fifteen_roll_sum(log_ret)) %>% 
+  select(tidy_date, tidy_time, ret_15m) %>%
+  filter(!is.na(ret_15m)) %>% 
+  slice(seq(1, nrow(IPC_tbl_tm), by = 15))
+```
+
+
+```{r}
+RV_s15 <- IPC_15m %>% 
+  mutate(log_ret_sq = ret_15m^2) %>% 
+  group_by(tidy_date) %>% 
+  summarise(RVs15 = sum(log_ret_sq),
+            RVs15_an = 252 * sqrt(RVs15))
+```
+
+And lastly, for the $s = 30$ grid:
+
+```{r}
+IPC_30m <- IPC_tbl_tm %>% 
+  mutate(ret_30m = thirty_roll_sum(log_ret)) %>% 
+  select(tidy_date, tidy_time, ret_30m) %>%
+  filter(!is.na(ret_30m)) %>% 
+  slice(seq(1, nrow(IPC_tbl_tm), by = 30))
+```
+
+
+```{r}
+RV_s30 <- IPC_30m %>% 
+  mutate(log_ret_sq = ret_30m^2) %>% 
+  group_by(tidy_date) %>% 
+  summarise(RVs30 = sum(log_ret_sq),
+            RVs30_an = 252 * sqrt(RVs30))
+```
+
+
+
+
+## Volatility signature plot
+
+The Sparse RV Estimator is calculated using an _s_-minute grid ($s \geq 1$):
+
+\begin{equation}
+RV_{t+1}^s = \sum \limits_{m/s}^{j=1} R^2_{t+js/m}
+\end{equation}
+
+
+Now the problem lies in the choice of the subsampling parameter $s$, a problem which represents a typical bias-variance trade-off. That is because ...
+
+This is where volatility signature plots (VSP) will help; these are a graphical tool that helps us choose the subsampling parameter $s$. We do a VSP in the following manner:
+
+1. Compute $RV_{t+1}^s$ for values of $s$ going from 1 to 120 minutes. 
+
+```{r}
+all_RV_sparse <- RVs %>% 
+  left_join(y = RV_s5, by = "tidy_date") %>% 
+  left_join(y = RV_s10, by = "tidy_date") %>% 
+  left_join(y = RV_s15, by = "tidy_date") %>% 
+  left_join(y = RV_s30, by = "tidy_date")
+
+all_RV_sparse
+```
+
+
+2. Scatter plot the average RV across days on the vertical axis against $s$ on the horizontal axis. 
+
+```{r}
+signature_plot_data <- all_RV_sparse %>% 
+  summarise(s1 = mean(RV),
+            s5 = mean(RVs5),
+            s10 = mean(RVs10),
+            s15 = mean(RVs15),
+            s30 = mean(RVs30)
+            ) %>% 
+  pivot_longer(cols = everything(), names_to = "s", values_to = "avg_RV_sparse") %>% 
+  add_column(minutes = c(1, 5, 10, 15, 30))
+```
+
+
+```{r, layout="l-body-outset", fig.width=8, fig.asp=0.618}
+signature_plot_data %>% 
+  ggplot(aes(minutes, avg_RV_sparse)) +
+  # geom_smooth(colour = amazing_colors[2]) +
+  geom_point(colour = amazing_colors[3], size = 3) +
+  labs(
+    title = "Signature Plot for the RV Sparse",
+    x = "Minutes",
+    y = "RV"
+  ) +
+  scale_y_continuous(labels = number_format())
+```
+
+
+```{r}
+# ggsave(
+#   filename = "signature-plot.png",
+#   units = "in",
+#   width = 8 * 1.61803398875,
+#   height = 8,
+#   path = "D:/01-Data-Science/01-RStudio-Projects/Finance-Research/03_images/",
+#   dpi = 400,
+#   device = "png"
+# )
+```
+
+3. Look for the smallest $s$ such that the average RV does not change much for values of $s$ larger than this number.
+
+
+
+
+
+## Average RV Estimator
+
+We can also sample with an _s_-minute grid, but every _k_ minutes. Here, we employ several combinations of these: make use of `s = 5` and `s = 10` minute samples every `k = 1` minute, and `s = 15` + `s = 30` minute samples every `k = 5` minutes. We also try `s = 15` every `k = 1` minute and `s = 10` every `k = 2`.
+
+5-minute grid every 1-minute:
+
+```{r}
+IPC_5m_1m <- IPC_tbl_tm %>% 
+  mutate(ret_5m = five_roll_sum(log_ret)) %>% 
+  select(tidy_date, tidy_time, ret_5m) %>%
+  filter(!is.na(ret_5m))
+
+
+IPC_5m_1m
+```
+
+10-minute grid every 1-minute:
+
+```{r}
+IPC_10m_1m <- IPC_tbl_tm %>% 
+  mutate(ret_10m = ten_roll_sum(log_ret)) %>% 
+  select(tidy_date, tidy_time, ret_10m) %>%
+  filter(!is.na(ret_10m))
+
+IPC_10m_1m
+```
+
+
+10-minute grid every 2-minutes:
+
+```{r}
+IPC_10m_2m <- IPC_tbl_tm %>% 
+  mutate(ret_10m = ten_roll_sum(log_ret)) %>% 
+  select(tidy_date, tidy_time, ret_10m) %>%
+  filter(!is.na(ret_10m)) %>% 
+  slice(seq(1, nrow(IPC_tbl_tm), by = 2))
+
+IPC_10m_2m
+```
+
+
+15-minute grid every 1-minute:
+
+```{r}
+IPC_15m_1m <- IPC_tbl_tm %>% 
+  mutate(ret_15m = fifteen_roll_sum(log_ret)) %>% 
+  select(tidy_date, tidy_time, ret_15m) %>%
+  filter(!is.na(ret_15m))
+
+IPC_15m_1m
+```
+
+
+15-minute grid every 3-minutes:
+
+```{r}
+IPC_15m_3m <- IPC_tbl_tm %>% 
+  mutate(ret_15m = fifteen_roll_sum(log_ret)) %>% 
+  select(tidy_date, tidy_time, ret_15m) %>%
+  filter(!is.na(ret_15m)) %>% 
+  slice(seq(1, nrow(IPC_tbl_tm), by = 3))
+
+IPC_15m_3m
+```
+
+
+15-minute grid every 5-minutes:
+
+```{r}
+IPC_15m_5m <- IPC_tbl_tm %>% 
+  mutate(ret_15m = fifteen_roll_sum(log_ret)) %>% 
+  select(tidy_date, tidy_time, ret_15m) %>%
+  filter(!is.na(ret_15m)) %>% 
+  slice(seq(1, nrow(IPC_tbl_tm), by = 5))
+
+IPC_15m_5m
+```
+
+
+30-minute grid every 1-minute:
+
+```{r}
+IPC_30m_1m <- IPC_tbl_tm %>% 
+  mutate(ret_30m = thirty_roll_sum(log_ret)) %>% 
+  select(tidy_date, tidy_time, ret_30m) %>%
+  filter(!is.na(ret_30m))
+
+IPC_30m_1m
+```
+
+30-minute grid every 3-minutes:
+
+```{r}
+IPC_30m_3m <- IPC_tbl_tm %>% 
+  mutate(ret_30m = thirty_roll_sum(log_ret)) %>% 
+  select(tidy_date, tidy_time, ret_30m) %>%
+  filter(!is.na(ret_30m)) %>% 
+  slice(seq(1, nrow(IPC_tbl_tm), by = 3))
+
+IPC_30m_3m
+```
+
+
+30-minute grid every 5-minutes:
+
+```{r}
+IPC_30m_5m <- IPC_tbl_tm %>% 
+  mutate(ret_30m = thirty_roll_sum(log_ret)) %>% 
+  select(tidy_date, tidy_time, ret_30m) %>%
+  filter(!is.na(ret_30m)) %>% 
+  slice(seq(1, nrow(IPC_tbl_tm), by = 5))
+
+IPC_30m_5m
+```
+
+
+30-minute grid every 10-minutes:
+
+```{r}
+IPC_30m_10m <- IPC_tbl_tm %>% 
+  mutate(ret_30m = thirty_roll_sum(log_ret)) %>% 
+  select(tidy_date, tidy_time, ret_30m) %>%
+  filter(!is.na(ret_30m)) %>% 
+  slice(seq(1, nrow(IPC_tbl_tm), by = 10))
+
+IPC_30m_10m
+```
+
+
+
+
+Now, let's compute the RVs for each s-minute every k-minute grid:
+
+```{r}
+IPC_5m_1m %>% 
+  mutate(log_ret_sq = ret_5m^2) %>% 
+  group_by(tidy_date) %>% 
+  summarise(RV = sum(log_ret_sq),
+            RV_an = 252 * sqrt(RV))
+```
+
+
+
+
+
+
+
+
+

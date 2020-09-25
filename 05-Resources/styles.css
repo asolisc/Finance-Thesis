@@ -44,14 +44,12 @@ font-family: 'Zilla Slab', serif;
   /* Tweak code text */
 code {
   font-family: 'Fira Code', monospace;
-  color: #224888;
+  /* color: #224888; */
  /* color: #096B72; */
-  background: #F4F3EE;
+ /* background: #F4F3EE; */
   font-weight: 400;
-  font-size: 0.9em;
+  font-size: 0.8em;
 }
-
-
 
 
 d-title {
@@ -121,4 +119,10 @@ d-appendix p {
 
 
 
+  /* Edit code chunk output */
+d-article div.sourceCode code,
+d-article pre code {
+	font-family: 'Fira Code', monospace;
+	font-size: 0.9rem;
+}
 
