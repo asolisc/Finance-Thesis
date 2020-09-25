@@ -1,0 +1,530 @@
+---
+title: "Realized Higher Moment Measures"
+description: |
+  Part 1: Exploratory Data Analysis & Data Preprocessing
+author:
+  - name: Alexis Solis Cancino
+    url: alexis.solisc@gmail.com
+    affiliation: ITAM
+date: "`r Sys.Date()`"
+output: 
+  distill::distill_article:
+    toc: true
+    toc_depth: 2
+    css: "D:/11-Estancia/03-Finance-Thesis/05-Resources/styles.css"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+
+# --- set chunk options ---
+knitr::opts_chunk$set(
+  message = FALSE,
+  warning = FALSE,
+  echo = FALSE
+)
+
+# --- Data Wrangling ---
+library(tidyverse)
+library(janitor)
+library(arrow)
+library(lubridate)
+library(hms)
+
+# --- Modeling Time Series ---
+library(tidymodels)
+library(modeltime)
+library(timetk)
+library(anomalize) # for outlier detection
+
+
+# --- Paths Management ---
+library(here)
+
+
+# --- Source ggplot2 themes ---
+source("D:/01-Data-Science/03-Helper-Scripts/ggplot2_themes.R")
+```
+
+# 1. Introduction & Importing Data
+
+We'll work with intraday data for the _S&P/BMV IPC Equity Index_. The data consists of `n = 2,133,890` observations and `k = 23` variables. The time-series is composed of prices and trades per minute, spanning from the beginning of 1996 through the first half of 2018.
+
+```{r}
+# Read the data
+IPC <- arrow::read_parquet(file = here("01-Data", "parquet", "raw_MEXICO_IPC.parquet"))
+```
+
+First thing we do is take a look at the columns and data types that we have:
+
+```{r}
+IPC %>% glimpse()
+```
+
+
+
+```{r}
+# Create vector with new column names
+column_names <- c("ticker","raw_date","raw_time","type",
+                  "open","high","low","last","volume",
+                  "average_price","vwap","no_trades",
+                  "correction_qualifiers","open_bid",
+                  "high_bid","low_bid","close_bid",
+                  "no_bids","open_ask","high_ask","low_ask",
+                  "close_ask","no_ask")
+
+# Rename the columns
+IPC <- IPC %>% set_names(column_names)
+```
+
+
+We can count how many `NA`s are present in our data. We do this per column:
+
+```{r}
+map_df(IPC, ~sum(is.na(.))) %>% glimpse()
+```
+
+
+We see that there are 10 columns (variables) that have all values as `NA`. We assign these variables to the `columns_to_remove` object and remove them from the data.
+
+```{r}
+# Get which columns have all values as NAs.
+columns_to_remove <- map_df(IPC, ~ sum(is.na(.))) %>%
+  pivot_longer(cols = everything(), names_to = "variable", values_to = "no_missing") %>% 
+  filter(no_missing > 0) %>%
+  pull(variable)
+
+# Print the selected columns.
+columns_to_remove
+```
+
+
+We name the _clean_ dataset as `IPC_ip` (IPC intraday prices) and again see the column names and each data type.
+
+```{r}
+# Get a new dataset without the selected columns
+IPC_ip <- IPC %>% select(-all_of(columns_to_remove))
+
+# Remove the older df
+# rm(IPC)
+
+# Take a look at the data
+IPC_ip %>% glimpse()
+```
+
+
+# 2. Feature Engineering & Data Wrangling
+
+We then carry on with the analysis by creating some new variables (a.k.a. _Feature Engineering_) and manipulating the data. 
+
+First we drop the `ticker`, `type`, `open`, `high`, and `low` columns because we think they are of no use for the analysis.
+
+Also, we create a `tidy_date` variable where we store the date according to the _ISO 8601_ standard that states that dates should be expressed in the `YYYY-MM-DD` format. In consequence, the `raw_date` column is dropped and we keep the newly created `tidy_date` variable instead.
+
+We store the modified data into the `IPC_tbl` (IPC tibble) object.
+
+```{r}
+IPC_tbl <- IPC_ip %>% as_tibble() %>%
+  select(-c(ticker, type, open, high, low)) %>% 
+  mutate(tidy_date = lubridate::ymd(raw_date)) %>%
+  select(-raw_date)
+
+# Remove the older df
+# rm(IPC_ip)
+```
+
+
+Next, we create some time-related variables, such as:
+
+`tidy_year`: a `dbl` that stores the year (from 1996 - 2018).
+
+`tidy_month`: a `dbl` that stores the month as a number (from 1 through 12).
+
+`tidy_mday`: a `dbl` that stores the day number within each month (from 1 through 31).
+
+`tidy_wday`: a categorical variable (`fctr`) that includes: `Mon` `Tue` `Wed` `Thu` `Fri`.
+
+`tidy_hour`: a `dbl` that stores the hour (we have data from 5 through 20 hours).
+
+`tidy_minute`: a  `dbl` that stores the minute of the trade (from 0 through 59).
+
+`tidy_time`: an `hms` (hour-minute-second) object that stores the time of the trade.
+
+
+```{r}
+IPC_tbl <- 
+  
+  IPC_tbl %>%
+  
+  # Create the time-related variables
+  mutate(
+    tidy_year   = lubridate::year(tidy_date),
+    tidy_month  = lubridate::month(tidy_date),
+    tidy_mday   = lubridate::mday(tidy_date),
+    tidy_wday   = lubridate::wday(tidy_date, label = T, locale = "English"),
+    tidy_hour   = lubridate::hour(raw_time),
+    tidy_minute = lubridate::minute(raw_time),
+    tidy_time   = hms::as_hms(raw_time)
+  ) %>%
+  
+  # Create the trade_id variable
+  mutate(trade_id = seq(1:nrow(IPC))) %>%
+  
+  # Remove the raw_time column
+  select(-raw_time) %>%
+  
+  # Rearrange the order of the columns:
+  select(trade_id, tidy_date, tidy_time, dplyr::everything())
+
+
+# Finally take a thorough look at the data:
+IPC_tbl %>% skimr::skim()
+```
+
+
+## 2.1 Computing Intraday Log-Returns
+
+Next, we compute the intraday returns and assign them to the `log_ret` variable. We also convert our data into a time-friendly type of object called `tibble time` (we do this via the `as_tbl_time()` function).
+
+```{r}
+(IPC_ret_tbl <-
+  IPC_tbl %>%
+  dplyr::mutate(log_ret = log(last) - lag(log(last))) %>%
+   
+  # The following lines filter out the returns with NA:
+  # dplyr::filter(!is.na(log_ret)) %>%
+  # na.omit() %>%
+  
+  # The following line filters out the rows with zero returns:
+  # dplyr::filter(log_ret != 0) %>%
+  
+  # Rearrange the order of the columns:
+  dplyr::select(trade_id, tidy_date, log_ret, dplyr::everything()) %>%
+  
+  # Convert to tibbletime
+  tibbletime::as_tbl_time(index = tidy_date))
+
+# Remove the older df
+# rm(IPC_tbl)
+```
+
+
+## 2.2 Narrowing down the time window for trades
+
+First, it's useful to see how many different trading-days we have in our data.
+
+```{r}
+IPC_ret_tbl %>% 
+  distinct(tidy_date) %>% nrow()
+```
+
+So we have `5,613` different trading- days.
+
+It's worth noting that, for the `tidy_time` variable, we have data from `05:32:00` all the way through `20:22:00`. 
+
+Let's see the earliest times in our data:
+
+```{r}
+IPC_ret_tbl %>% select(tidy_time) %>% unique() %>% arrange(tidy_time) %>% head()
+```
+
+
+And the latest times in our data:
+
+```{r}
+IPC_ret_tbl %>% select(tidy_time) %>% unique() %>% arrange(tidy_time) %>% tail()
+```
+
+
+We can also visualize how many datapoints we have, per hour.
+
+```{r, layout="l-body-outset", fig.width=8, fig.asp=0.618}
+IPC_ret_tbl %>% mutate(tidy_hour = as.factor(tidy_hour)) %>% 
+  count(tidy_hour, sort = T, name = "trades_per_hour") %>% 
+  # mutate(tidy_hour = fct_reorder(tidy_hour, .x = trades_per_hour, .desc = T)) %>%
+  ggplot(aes(tidy_hour, trades_per_hour)) +
+  geom_col(fill = amazing_colors[1]) +
+  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+  labs(
+    title = "No. Prices per Hour in the Sample",
+    x = "Hour",
+    y = NULL
+  )
+```
+
+
+From the plot above, we see that most of the prices lie between 8:00AM - 3:00PM. It's interesting that the hours `8` and `15` have fewer datapoints. We can further inspect each one to see the hour-minute components of those trades. 
+
+```{r, layout="l-body-outset", fig.width=8, fig.asp=0.618}
+IPC_ret_tbl %>% 
+  filter(tidy_hour == 8) %>% 
+  count(tidy_minute, sort = T, name = "trades_per_minute") %>% 
+  ggplot(aes(tidy_minute, trades_per_minute)) +
+  geom_col(fill = amazing_colors[2]) +
+  scale_x_continuous(breaks = seq(0, 60, 5)) +
+  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+  labs(
+    title = "Number of Trades per Minute from 8:00AM-8:59AM",
+    x = "Minute",
+    y = NULL
+  )
+```
+
+
+As expected, the second half-hour is the most active (that is, the period from 8:30AM - 8:59AM). 
+
+Now, let's do the same for the `15` hour-mark:
+
+```{r, layout="l-body-outset", fig.width=8, fig.asp=0.618}
+IPC_ret_tbl %>% 
+  filter(tidy_hour == 15) %>% 
+  count(tidy_minute, sort = T, name = "trades_per_minute") %>% 
+  ggplot(aes(tidy_minute, trades_per_minute)) +
+  geom_col(fill = amazing_colors[3]) +
+  scale_x_continuous(breaks = seq(0, 60, 5)) +
+  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+    labs(
+    title = "Number of Trades per Minute from 3:00PM-3:59PM",
+    x = "Minute",
+    y = NULL
+  )
+```
+
+
+Here, the time with most trades is 3:00PM exactly. That's what we need because we'll ignore the rest of the trades. Following Liu, Patton, Sheppard (2013), we'll discard any prices that were quoted outside normal business hours. Hence, we want trades that lie between `08:30` and `15:00`. We'll store these trades in a new object called `IPC_tfr_tbl` (IPC time-filtered returns tibble). Finally, we'll print the earliest and latest times in our data to check.
+
+```{r}
+left_limit <- hms(seconds = 0,
+                  minutes = 30,
+                  hours = 8)
+
+right_limit <- hms(seconds = 0,
+                   minutes = 0,
+                   hours = 15)
+
+IPC_tfr_tbl <- IPC_ret_tbl %>%
+  filter(tidy_time >= left_limit & tidy_time <= right_limit)
+
+IPC_tfr_tbl
+# Remove old df
+# rm(IPC_ret_tbl)
+```
+
+
+```{r}
+IPC_tfr_tbl %>% select(tidy_time) %>% unique() %>% dplyr::arrange(tidy_time) %>% head()
+IPC_tfr_tbl %>% select(tidy_time) %>% unique() %>% dplyr::arrange(tidy_time) %>% tail()
+```
+
+
+We have filtered out `r nrow(IPC_ret_tbl) - nrow(IPC_tfr_tbl)` datapoints.
+
+One last check we need to do regarding this point is the amount of different days that we just filtered. To start, let's see all unique dates before narrowing the time window:
+
+```{r}
+IPC_ret_tbl %>% group_by(tidy_date) %>% dplyr::count() %>% nrow()
+```
+
+
+Now let's check for all unique dates after narrowing the time window:
+
+```{r}
+IPC_tfr_tbl %>% group_by(tidy_date) %>% dplyr::count() %>% nrow()
+```
+
+
+Thus, we see that we have lost `r IPC_ret_tbl %>% group_by(tidy_date) %>% dplyr::count() %>% nrow() - IPC_tfr_tbl %>% group_by(tidy_date) %>% dplyr::count() %>% nrow()` days of data. For purposes of this analysis, we deem that to be valid.
+
+## 2.3 Setting Overnight Returns to Zero
+
+Another aspect that we want to take into account is: the fact that the overnight return should not be taken into account. Therefore, we set the first log-return of each day to zero. Once again, we store these values in a new object called `IPC_oar_tbl` (which stands for IPC overnight adjusted returns tibble).
+
+```{r}
+(IPC_oar_tbl <- IPC_tfr_tbl %>% 
+   
+  mutate(log_ret = ifelse(test = lag(tidy_date) == tidy_date, 
+                          yes = log_ret, 
+                          no = 0)) %>%
+  
+  mutate(day_change = ifelse(test = lag(tidy_date) == tidy_date, 
+                             yes = 0, 
+                             no = 1)))
+# Remove old df
+# rm(IPC_tfr_tbl)
+```
+
+
+Our first log-return should be zero, but we have `NA`. Let's check that this is the only `NA`:
+
+```{r}
+IPC_oar_tbl %>% 
+  filter(is.na(log_ret)) %>% 
+  select(tidy_date, log_ret)
+```
+
+
+It is indeed our only `NA`. We can set it to zero.
+
+```{r}
+IPC_oar_tbl$log_ret[1] <- 0
+
+IPC_oar_tbl
+```
+
+
+We can check that all overnight returns are zero. We've created a variable (`day_change`) that goes to `1` when we have a change in day.
+
+```{r}
+IPC_oar_tbl %>% 
+  filter(day_change == 1) %>% 
+  select(log_ret) %>% 
+  unique()
+```
+
+
+Moreover, the number of overnight returns that have been set to zero should be one less than the number of different dates we have for the `tidy_date` variable. Let's check if this holds true:
+
+```{r}
+IPC_oar_tbl %>% 
+  filter(day_change == 1) %>% 
+  select(trade_id, tidy_date, log_ret)
+```
+
+
+We have `5,607` datapoints where `day_change = 1`. This should be one less than the amount of different dates (one less because the first date doesn't have `day_change` set to one).
+
+```{r}
+IPC_oar_tbl %>% select(tidy_date) %>% unique() %>% nrow()
+```
+
+
+Thus, we see that this holds true. We have correctly set the overnight returns to zero.
+
+## 2.4 Removing Outliers
+
+We want to filter out log-returns whose absolute value is greater than some threshold. We'll do this again later for 5-minute returns and 30-minute returns. We define the threshold such that we are filtering keeping ~ 99% of the original data. Log-returns that are outside of the defined threshold are immediately set to zero.
+
+```{r}
+threshold <- 0.0012
+
+IPC_fr <- IPC_oar_tbl %>% 
+  
+  # we keep values below the threshold
+  mutate(log_ret = ifelse(test = abs(log_ret) < threshold, 
+                          yes = log_ret, 
+                          no = 0)
+         )
+
+# Remove old df
+# rm(IPC_oar_tbl)
+```
+
+
+In this case we've set the variable `threshold` to the value (`0.0012`) such that we're filtering out ~ 1% of the data. We store the filtered data in the `IPC_fr` tibble (which stands for IPC filtered returns).
+
+
+## 2.5 Padding the Time Series
+
+Now, after all the data wrangling that we did, we still don't have a perfect time series, because it has some "holes" in it. We can check this by plotting, again, the number of log-returns we have per hour:
+
+```{r, layout="l-body-outset", fig.width=8, fig.asp=0.618}
+IPC_fr %>% mutate(tidy_hour = as.factor(tidy_hour)) %>% 
+  count(tidy_hour, sort = T, name = "trades_per_hour") %>% 
+  # mutate(tidy_hour = fct_reorder(tidy_hour, .x = trades_per_hour, .desc = T)) %>%
+  ggplot(aes(tidy_hour, trades_per_hour)) +
+  geom_col(fill = amazing_colors[1]) +
+  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+  labs(
+    title = "No. Trades per Hour in the Sample",
+    x = "Hour",
+    y = NULL
+  )
+```
+
+
+Most of the hours (9 - 14) have almost complete data. The hour number 8 has almost half the data points but that's natural since we only have half an hour there. However, almost all of the log-returns for the `15:00` mark seem to be missing. In normal business hours, we have 6 hours and a half of market trading. If we have one-minute trades, that means we should have $6.5 * 60 + 1 = 391$ trades/day. The `+1` in the equation comes from including the log-returns at exactly `15:00` hours.
+
+
+```{r, echo = FALSE}
+timetk::tk_make_timeseries(start_date = "2020-09-11 08:30:00", by = "1 min", length_out = 391) %>% head()
+```
+
+
+Therefore, we'll pad the time series with the mean log-return for each half-hour.
+
+```{r, eval = FALSE}
+IPC_padded <-
+  IPC_fr %>%
+  
+  # Create the half-hour variable
+  mutate(
+    tidy_half_hour = case_when(
+      tidy_hour == 8 ~ 1,
+      tidy_hour == 9 & tidy_minute < 30 ~ 2,
+      tidy_hour == 9 & tidy_minute >= 30 ~ 3,
+      tidy_hour == 10 & tidy_minute < 30 ~ 4,
+      tidy_hour == 10 & tidy_minute >= 30 ~ 5,
+      tidy_hour == 11 & tidy_minute < 30 ~ 6,
+      tidy_hour == 11 & tidy_minute >= 30 ~ 7,
+      tidy_hour == 12 & tidy_minute < 30 ~ 8,
+      tidy_hour == 12 & tidy_minute >= 30 ~ 9,
+      tidy_hour == 13 & tidy_minute < 30 ~ 10,
+      tidy_hour == 13 & tidy_minute >= 30 ~ 11,
+      tidy_hour == 14 & tidy_minute < 30 ~ 12,
+      tidy_hour == 14 & tidy_minute >= 30 ~ 12,
+      TRUE ~ 13
+    )
+  ) %>%
+  
+  # Create the tidy_dttm variable for padding
+  mutate(tidy_dttm = lubridate::as_datetime(str_c(tidy_date, " ", tidy_time))) %>%
+  
+  # Pad the time series, starting from 1996-01-02 08:30:00
+  timetk::pad_by_time(
+    .date_var = "tidy_dttm",
+    .by = "1 min",
+    .start_date = as_datetime('1996-01-02 08:30:00'),
+    .end_date = as_datetime('2018-06-05 15:00:00')
+  )
+```
+
+
+
+```{r, eval = FALSE}
+IPC_padded %>% dplyr::relocate(tidy_dttm, everything())
+```
+
+
+
+```{r, eval = FALSE}
+IPC_padded_tbl <- 
+  
+  IPC_padded %>%
+  
+  # Filter out trades that are out of normal business hours
+  # filter(tidy_time >= left_limit & tidy_time <= right_limit) %>% 
+
+  # Create the time-related variables
+  mutate(
+    raw_time    = as_hms(tidy_dttm),
+    tidy_date   = lubridate::ymd(str_sub(tidy_dttm, 1, 10)),
+    tidy_year   = lubridate::year(tidy_date),
+    tidy_month  = lubridate::month(tidy_date),
+    tidy_mday   = lubridate::mday(tidy_date),
+    tidy_wday   = lubridate::wday(tidy_date, label = T, locale = "English"),
+    tidy_hour   = lubridate::hour(raw_time),
+    tidy_minute = lubridate::minute(raw_time),
+    tidy_time   = hms::as_hms(raw_time)
+  ) %>%
+  
+  # Create the trade_id variable
+  mutate(trade_id = seq(1:nrow(IPC_padded))) %>%
+  
+  # Drop the tidy_dttm variable
+  select(-c(tidy_dttm, raw_time)) %>% 
+  
+  # Rearrange the order of the columns
+  select(trade_id, tidy_date, tidy_time, log_ret, dplyr::everything())
+```
+

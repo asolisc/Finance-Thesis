@@ -1,0 +1,511 @@
+---
+title: "Working with the Volume Data"
+description: |
+  EDA for Volume Data
+author:
+  - name: Alexis Solis Cancino
+    affiliation: ITAM
+date: "`r Sys.Date()`"
+output: distill::distill_article
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, eval = FALSE}
+# NOT RUN:
+
+# save any ggplot
+# ggsave("figure2b.png", dpi=300, dev='png', height=8, width=13, units="in")
+```
+
+```{r setup, include=FALSE}
+
+# Chunk setup
+knitr::opts_chunk$set(
+  message = FALSE,
+  warning = FALSE,
+  echo = FALSE
+)
+```
+
+## Exploratory Data Analysis for the Volume Data
+
+```{r}
+library(lubridate)
+library(glue)
+library(arrow)
+library(skimr)
+library(gt)
+library(patchwork)
+library(tidyverse)
+library(ghibli)
+```
+
+
+```{r}
+# --- Setup the ggplot theme ---
+
+# ggplot2 function for theme:
+theme_roboto <- function(){
+  
+  theme_minimal(base_family = "Roboto Condensed") +
+    theme(
+      panel.grid.minor.x = element_blank(),
+      panel.grid.minor.y = element_blank()
+    )
+  
+}
+
+# set the theme:
+ggplot2::theme_set(theme_roboto())
+```
+
+
+```{r}
+scale_ghibli_d <- function() {
+  ghibli::scale_fill_ghibli_d("YesterdayMedium", direction = -1)
+}
+
+scale_ghibli_c <- function() {
+  ghibli::scale_fill_ghibli_c("YesterdayMedium", direction = -1)
+}
+
+colour_ghibli_d <- function() {
+  ghibli::scale_color_ghibli_d("YesterdayMedium", direction = -1)
+}
+
+colour_ghibli_c <- function() {
+  ghibli::scale_color_ghibli_c("YesterdayMedium", direction = -1)
+}
+
+options
+
+options(ggplot2.discrete.fill = scale_ghibli_d(),
+        ggplot2.continuous.fill = scale_ghibli_c(),
+        ggplot2.discrete.colour = colour_ghibli_d(),
+        ggplot2.continuous.colour = colour_ghibli_c()
+        )
+```
+
+
+```{r}
+# --- setup the error search engine ---
+
+search_last_error_on_so <- function() {
+  tr <- .traceback()
+  if(!length(tr)) {
+    return(NULL)
+  }
+  err_msg <- tryCatch(
+    eval(parse(text = tr[[1]])),
+    error = function(e) paste0("Error: ", e$message)
+  )
+  browseURL(paste0('https://stackoverflow.com/search?q=', err_msg))
+}
+
+# options(error = search_last_error_on_so)
+
+```
+
+
+
+```{r, include=FALSE}
+# Setup fonts:
+library(extrafont)
+loadfonts(device = "win")
+```
+
+```{r}
+# font_add_google(name = "IBM Plex Sans Condensed", family = "IBM Plex Sans Condensed")
+# showtext_auto()
+```
+
+
+```{r}
+# --- Read the data in parquet file ---
+volume_data <- read_parquet(file = "01_data/volume.parquet")
+```
+
+By doing a quick inspection, we see that there are: 
+
+```{r}
+volume_data %>%
+  filter(volume <= 0) %>% 
+  count(name = 'zero_value_count') %>% pull()
+```
+
+... `269,189` zero-values in the data, so we'll filter those out.
+
+
+First, let's plot the volume on two random days:
+
+```{r, layout="l-body-outset"}
+random_date_1 <- ymd('20080915')
+
+p1 <- volume_data %>% 
+  filter(tidy_date == random_date_1) %>%
+  ggplot(aes(tidy_time, volume)) +
+   geom_col(alpha = 0.9, fill = tidyquant::palette_light()[6]) +
+  scale_x_time(
+    labels = scales::label_time("%H:%M"),
+    breaks = hm('08:00') + minutes(x = seq(30,430, by = 30)),
+    guide = guide_axis(n.dodge = 2)
+  ) +
+    scale_y_continuous(
+    labels = scales::number_format(big.mark = ",")
+  ) + 
+  labs(
+    title = glue("Volume on {random_date_1}"),
+    y = 'Volume per minute', 
+    x = 'Time'
+  )
+
+random_date_2 <- ymd('20080917')
+
+p2 <- volume_data %>% 
+  filter(tidy_date == random_date_2) %>% 
+  ggplot(aes(tidy_time, volume)) +
+  geom_col(alpha = 0.9, fill = tidyquant::palette_light()[6]) +
+  scale_x_time(
+    labels = scales::label_time("%H:%M"),
+    breaks = hm('08:00') + minutes(x = seq(30,430, by = 30)),
+    guide = guide_axis(n.dodge = 2)
+  ) +
+    scale_y_continuous(
+    labels = scales::number_format(big.mark = ",")
+  ) + 
+  labs(
+    title = glue("Volume on {random_date_2}"),
+    y = 'Volume per minute',
+    x = 'Time'
+  )
+
+p1 / p2
+```
+
+We see that we have the **cumulative volume** in the data. If we take the difference between each data point, we'll have the correct data. Let's plot it:
+
+```{r, layout="l-body-outset"}
+p3 <- volume_data %>% 
+  filter(tidy_date == random_date_1) %>%
+  mutate(new_volume = volume - lag(volume)) %>% 
+  filter(!is.na(new_volume)) %>% 
+  relocate(new_volume, volume) %>% 
+  ggplot(aes(tidy_time, new_volume)) +
+  geom_col(alpha = 0.9, fill = tidyquant::palette_light()[1]) +
+  # geom_smooth(
+  #   formula = y ~ x, 
+  #   method = 'loess'
+  #   ) +
+  scale_y_continuous(
+    labels = scales::number_format(big.mark = ",")
+  ) + 
+  scale_x_time(
+    labels = scales::label_time("%H:%M"),
+    breaks = hm('08:00') + minutes(x = seq(30,430, by = 30)),
+    guide = guide_axis(n.dodge = 2)
+  ) +
+  labs(
+    title = glue('Volume for the IPC on {random_date_1}'),
+    y = 'Volume', 
+    x = 'Time'
+  )
+
+p4 <- volume_data %>% 
+  filter(tidy_date == random_date_2) %>%
+  mutate(new_volume = volume - lag(volume)) %>% 
+  filter(!is.na(new_volume)) %>% 
+  relocate(new_volume, volume) %>% 
+  ggplot(aes(tidy_time, new_volume)) +
+  geom_col(alpha = 0.9, fill = tidyquant::palette_light()[1]) +
+  # geom_smooth(
+  #   formula = y ~ x, 
+  #   method = 'loess'
+  #   ) +
+  scale_y_continuous(
+    labels = scales::number_format(big.mark = ",")
+  ) + 
+  scale_x_time(
+    labels = scales::label_time("%H:%M"),
+    breaks = hm('08:00') + minutes(x = seq(30,430, by = 30)),
+    guide = guide_axis(n.dodge = 2)
+  ) +
+  labs(
+    title = glue('Volume for the IPC on {random_date_2}'),
+    y = 'Volume', 
+    x = 'Time'
+  )
+
+p3 / p4
+```
+
+
+... which looks correct.
+
+Now, this situation begs the question: will this transformation work for **all days** in the dataset? Let's try another day:
+
+```{r, layout="l-body-outset"}
+random_date <- ymd('20070919')
+
+volume_data %>% 
+  filter(tidy_date == random_date) %>%
+  mutate(new_volume = volume - lag(volume)) %>% 
+  filter(!is.na(new_volume)) %>% 
+  relocate(new_volume, volume) %>% 
+  ggplot(aes(tidy_time, new_volume)) +
+  geom_col(alpha = 0.9, fill = tidyquant::palette_light()[1]) +
+  # geom_smooth(
+  #   formula = y ~ x, 
+  #   method = 'loess'
+  #   ) +
+  scale_y_continuous(
+    labels = scales::number_format(big.mark = ",")
+  ) + 
+  scale_x_time(
+    labels = scales::label_time("%H:%M"),
+    breaks = hm('08:00') + minutes(x = seq(30,430, by = 30)),
+    guide = guide_axis(n.dodge = 2)
+  ) +
+  labs(
+    title = glue('Volume for the IPC on {random_date}'),
+    y = 'Volume per minute', 
+    x = 'Time'
+  ) +
+  theme_minimal(base_family = "Roboto Condensed") +
+  theme(
+    panel.grid.minor.x = element_blank(),
+    panel.grid.minor.y = element_blank()
+  )
+```
+
+Here, we tried Wednesday September 19, 2007; and the large and negative value that was computed for this day would indicate that this doesn't work for every day. First, let's analyze what happened there. We see that the negative value was computed between 12:00 and 13:00. First, let's see what was the exact time:
+
+```{r}
+volume_data %>% 
+  filter(tidy_date == random_date) %>% 
+  mutate(new_volume = volume - lag(volume)) %>% 
+  filter(new_volume < 0) %>% 
+  select(tidy_time) %>% 
+  pull()
+```
+
+So 12:40, let's now filter the data around that time:
+
+```{r}
+volume_data %>% 
+  filter(tidy_date == random_date) %>% 
+  mutate(new_volume = volume - lag(volume)) %>% 
+  filter(!is.na(new_volume)) %>%
+  filter(
+    tidy_time %>% 
+      between(
+        left  = hm('12:35'), 
+        right = hm('12:45')
+      )
+    ) %>% 
+  select(new_volume, volume, tidy_time) %>%
+  
+  # Reformatting to gt-friendly:
+  mutate(tidy_time = as.character(tidy_time)) %>%
+  rename(
+    "Volume" = new_volume,
+    "Cumulative Volume" = volume,
+    "Time" = tidy_time
+  ) %>% 
+  
+  gt() %>% 
+  gt::fmt_number(columns = 1:2, decimals = 0) %>% 
+  gt::fmt_time(columns = 3, time_style = 4)
+```
+
+So, we see the cumulative volume gets to 138,295,233 before it decreases to 133,969,333. It's not clear what causes the cumulative volume to decrease at 12:40PM, but for now, we'll just filter the negative values for volume. The `new_volume` variable is calculated as the difference between the current (cumulative) volume and its previous value. We do this except for the points where the days change, so no "overnight" calculation is done.
+
+```{r}
+volume_clean <- 
+  volume_data %>% 
+  
+  # Calculate the volume as the difference between the current (cumulative) volume and previous volume.
+  mutate(
+    
+    # We do this except for the points where the days change, so no "overnight" calculation is done 
+    new_volume = ifelse(day_change == 1, volume, volume - lag(volume))
+    
+    ) %>% 
+  filter(!is.na(new_volume), new_volume > 0) %>% 
+  relocate(trade_id, tidy_time, new_volume, no_trades)
+```
+
+
+Let's see some summary statistics on the volume data:
+
+```{r}
+volume_clean %>% 
+  summarise(
+    Min = min(new_volume),
+    Median = median(new_volume),
+    Mean = mean(new_volume),
+    Max = max(new_volume),
+    `Standard Dev` = sd(new_volume)
+  ) %>% 
+  pivot_longer(cols = 1:5, names_to = "Measure", values_to = "Value") %>% 
+  gt() %>% 
+  fmt_number(columns = "Value", decimals = 0) %>% 
+  gt::tab_header(title = "Volume Data Summary Statistics")
+```
+
+
+We can create a histogram for the volume data. In this case we've plotted the histogram for the natural log of the `new_volume` variable.
+
+```{r, layout="l-body-outset"}
+volume_clean %>%
+  mutate(new_volume = log(new_volume)) %>% 
+  ggplot(aes(new_volume)) +
+  geom_histogram(fill = tidyquant::palette_light()[6],
+                 colour = tidyquant::palette_light()[1],
+                 bins = 50) +
+  scale_y_continuous(
+    labels = scales::number_format(big.mark = ",")
+  ) +
+  scale_x_continuous(
+    labels = scales::number_format(big.mark = ","),
+    limits = c(5, 20),
+  ) +
+  labs(
+    title = "Histogram for the natural logarithm of volume",
+    x = "ln(volume)"
+  )
+```
+
+Now, we proceed to do the same plot, but separating by year:
+
+```{r, layout="l-body-outset"}
+volume_clean %>%
+  mutate(new_volume = log(new_volume)) %>% 
+  filter(tidy_year >= 2013) %>% 
+  ggplot(aes(new_volume)) +
+  geom_histogram(fill = tidyquant::palette_light()[6],
+                 colour = tidyquant::palette_light()[1],
+                 bins = 50) +
+  facet_wrap(~ tidy_year, scales = "free") +
+  scale_y_continuous(
+    labels = scales::number_format(big.mark = ",")
+  ) +
+  scale_x_continuous(
+    labels = scales::number_format(big.mark = ",")
+  ) +
+  labs(
+    title = "Histogram for the natural logarithm of volume, per year",
+    x = "ln(volume)"
+  )
+```
+
+## Time Series for time subgrids.
+
+Now, we are going to build a plot for mean volume by half-hour subgrids. First we divide our data into 13 half-hour subgrids (from 08:00AM - 3:00PM). 
+
+```{r}
+volume_subgrid <- volume_clean %>%
+  mutate(
+    subgrid = case_when(
+      tidy_time >= hm("8:30")  & tidy_time < hm("9:00")  ~ 1,
+      tidy_time >= hm("9:00")  & tidy_time < hm("9:30")  ~ 2,
+      tidy_time >= hm("9:30")  & tidy_time < hm("10:00") ~ 3,
+      tidy_time >= hm("10:00") & tidy_time < hm("10:30") ~ 4,
+      tidy_time >= hm("10:30") & tidy_time < hm("11:00") ~ 5,
+      tidy_time >= hm("11:00") & tidy_time < hm("11:30") ~ 6,
+      tidy_time >= hm("11:30") & tidy_time < hm("12:00") ~ 7,
+      tidy_time >= hm("12:00") & tidy_time < hm("12:30") ~ 8,
+      tidy_time >= hm("12:30") & tidy_time < hm("13:00") ~ 9,
+      tidy_time >= hm("13:00") & tidy_time < hm("13:30") ~ 10,
+      tidy_time >= hm("13:30") & tidy_time < hm("14:00") ~ 11,
+      tidy_time >= hm("14:00") & tidy_time < hm("14:30") ~ 12,
+      tidy_time >= hm("14:30") & tidy_time <= hm("15:00") ~ 13)
+  ) %>% 
+  mutate(
+    subgrid_id = case_when(
+      tidy_time >= hm("8:30")  & tidy_time < hm("9:00")  ~ "08:30 - 8:59",
+      tidy_time >= hm("9:00")  & tidy_time < hm("9:30")  ~ "09:00 - 9:29",
+      tidy_time >= hm("9:30")  & tidy_time < hm("10:00") ~ "09:30 - 09:59",
+      tidy_time >= hm("10:00") & tidy_time < hm("10:30") ~ "10:00 - 10:29",
+      tidy_time >= hm("10:30") & tidy_time < hm("11:00") ~ "10:30 - 10:59",
+      tidy_time >= hm("11:00") & tidy_time < hm("11:30") ~ "11:00 - 11:29",
+      tidy_time >= hm("11:30") & tidy_time < hm("12:00") ~ "11:30 - 11:59",
+      tidy_time >= hm("12:00") & tidy_time < hm("12:30") ~ "12:00 - 12:29",
+      tidy_time >= hm("12:30") & tidy_time < hm("13:00") ~ "12:30 - 12:59",
+      tidy_time >= hm("13:00") & tidy_time < hm("13:30") ~ "13:00 - 13:29",
+      tidy_time >= hm("13:30") & tidy_time < hm("14:00") ~ "13:30 - 13:59",
+      tidy_time >= hm("14:00") & tidy_time < hm("14:30") ~ "14:00 - 14:29",
+      tidy_time >= hm("14:30") & tidy_time <= hm("15:00") ~ "14:30 - 15:00")
+  ) %>%   
+  relocate(subgrid, subgrid_id)
+```
+
+We plot this down below. Here, we can see that the most active half-hours are the last and first ones.
+
+```{r, layout="l-body-outset"}
+volume_subgrid %>%
+  
+  group_by(subgrid, subgrid_id) %>%
+  summarise(mean_volume = mean(new_volume)) %>%
+  arrange(-mean_volume) %>%
+  
+  ggplot(aes(subgrid_id, mean_volume)) +
+  geom_col(fill = "#26432FFF") +
+  
+  scale_x_discrete(guide = guide_axis(n.dodge = 2)) +
+  
+  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+  
+  labs(x = "Time Grid (half-hour)",
+       y = "Average Volume per Grid")
+```
+
+
+## Volume by week and by weekday
+
+Next, we can go ahead and do a similar analysis, but by week. To see which weeks in the year are the most active.
+
+```{r}
+volume_weeks <- volume_subgrid %>%
+  mutate(tidy_week = week(tidy_date)) %>%
+  relocate(tidy_week) %>%
+  mutate(tidy_wday = fct_relevel(tidy_wday, c("Mon", "Tue", "Wed", "Thu", "Fri")))
+```
+
+In the plot below we can see that the weeks 12, 11, and 13 are one of the most active (the 44th week gets on third place). Unsuprisingly, the last week of the year is the least active, probably due to holidays.
+
+```{r, layout="l-body-outset"}
+volume_weeks %>%
+  group_by(tidy_week) %>%
+  summarise(average_volume = mean(new_volume)) %>%
+  
+  mutate(tidy_week = as_factor(tidy_week)) %>%
+  mutate(tidy_week = fct_reorder(tidy_week, -average_volume)) %>% 
+  
+  ggplot(aes(x = tidy_week,
+             y = average_volume)) +
+  
+  geom_col(fill = "#26432FFF") +
+  
+  scale_x_discrete(breaks = seq(1, 53, by = 1), guide = guide_axis(angle = 90)) +
+  
+  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+  
+  labs(x = "Week Number",
+       y = "Average Volume per Week")
+```
+
+
+Finally, we do the analysis by day of the week. Interestingly, the most active weekday is Wednesday (with an average volume of 391,737), followed by Thursday (380,367) and Tuesday (378,052). Mondays are notably less active.
+
+```{r, layout="l-body-outset"}
+volume_weeks %>%
+  group_by(tidy_wday) %>% 
+  summarise(avg_vol = mean(new_volume)) %>% 
+  ggplot(aes(tidy_wday, avg_vol)) +
+  geom_col(fill = "#26432FFF") +
+  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+  labs(x = "Week Day",
+       y = "Average Volume per Day of the Week")
+```
+
