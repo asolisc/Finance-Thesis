@@ -116,17 +116,16 @@ IPC_ip %>% glimpse()
 
 We then carry on with the analysis by creating some new variables (a.k.a. _Feature Engineering_) and manipulating the data. 
 
-First we drop the `ticker`, `type`, `open`, `high`, and `low` columns because we think they are of no use for the analysis.
+First, we create a `tidy_date` variable where we store the date according to the _ISO 8601_ standard that states that dates should be expressed in the `YYYY-MM-DD` format. In consequence, the `raw_date` column is dropped and we keep the newly created `tidy_date` variable instead.
 
-Also, we create a `tidy_date` variable where we store the date according to the _ISO 8601_ standard that states that dates should be expressed in the `YYYY-MM-DD` format. In consequence, the `raw_date` column is dropped and we keep the newly created `tidy_date` variable instead.
+Also, we drop the `ticker`, `type`, `open`, `high`, and `low` columns because we think they are of no use for the analysis.
 
 We store the modified data into the `IPC_tbl` (IPC tibble) object.
 
 ```{r}
 IPC_tbl <- IPC_ip %>% as_tibble() %>%
-  select(-c(ticker, type, open, high, low)) %>% 
   mutate(tidy_date = lubridate::ymd(raw_date)) %>%
-  select(-raw_date)
+  select(-c(raw_date, ticker, type, open, high, low))
 
 # Remove the older df
 # rm(IPC_ip)
