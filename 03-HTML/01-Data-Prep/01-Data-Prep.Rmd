@@ -33,8 +33,6 @@ library(lubridate)
 library(hms)
 
 # --- Modeling Time Series ---
-library(tidymodels)
-library(modeltime)
 library(timetk)
 library(anomalize) # for outlier detection
 
