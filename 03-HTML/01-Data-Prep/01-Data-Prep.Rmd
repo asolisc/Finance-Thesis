@@ -31,6 +31,7 @@ library(janitor)
 library(arrow)
 library(lubridate)
 library(hms)
+library(readxl)
 
 # --- Modeling Time Series ---
 library(timetk)
@@ -447,7 +448,7 @@ Most of the hours (9 - 14) have almost complete data. The hour number 8 has almo
 
 
 ```{r, echo = FALSE}
-timetk::tk_make_timeseries(start_date = "2020-09-11 08:30:00", by = "1 min", length_out = 391) %>% head()
+# timetk::tk_make_timeseries(start_date = "2020-09-11 08:30:00", by = "1 min", length_out = 391) %>% head()
 ```
 
 
@@ -526,5 +527,197 @@ IPC_padded_tbl <-
   
   # Rearrange the order of the columns
   select(trade_id, tidy_date, tidy_time, log_ret, dplyr::everything())
+```
+
+
+
+
+# IPC and Volatility Indices -- Daily Data
+
+
+The data was taken from a Bloomberg terminal and from [S&P Dow Jones Indices](https://spindices.com/indices/strategy/sp-bmv-ipc-vix).
+
+```{r}
+indices_data <- 
+  
+  # Read Excel file
+  read_excel(path = here("01-Data", "mexbol-vimex.xlsx"),
+             
+             # Specify values for NA
+             na = c("#NA", "#N/A N/A"),
+             
+             # Specify column type
+             col_types = c("date", rep("numeric", 3))
+             ) %>%
+  
+  # Set names for columns
+  set_names(c("date", "mexbol_ipc", "vimex", "ipc_vix")) %>% 
+  
+  # Parse date column
+  mutate(date = ymd(date))
+
+indices_data
+```
+
+
+
+```{r}
+# To-Do:
+
+# 1. Transform data to long format
+
+# 2. Re-do plots with facet_wrap
+```
+
+
+Let's visualize the daily data for the IPC and the VIMEX:
+
+```{r, layout="l-body-outset"}
+# Build IPC plot
+plot_ipc <- indices_data %>% 
+  filter(!is.na(vimex)) %>% 
+  ggplot(aes(date, mexbol_ipc)) +
+  geom_line(colour = amazing_colors[1]) +
+  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+  scale_x_date(breaks = "2 years", labels = scales::date_format("%Y")) +
+  labs(
+    title = "IPC Index & VIMEX Volatility Index",
+    subtitle = "(2005 - 2019)",
+    x = NULL,
+    y = "S&P/BMV IPC"
+  )
+
+
+# Build VIMEX plot
+plot_vimex <- indices_data %>% 
+  filter(!is.na(vimex)) %>% 
+  ggplot(aes(date, vimex)) +
+  geom_line(colour = amazing_colors[2]) +
+  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+  scale_x_date(breaks = "2 years", labels = scales::date_format("%Y")) +
+    labs(
+    x = NULL,
+    y = "VIMEX"
+  )
+
+# Print plot
+cowplot::plot_grid(plot_ipc, 
+                   plot_vimex, 
+                   ncol = 1,
+                   rel_heights = c(1, 1))
+```
+
+We can do the same for the IPC and the IPC VIX:
+
+```{r, layout="l-body-outset"}
+# Build IPC plot with new title
+plot_ipc2 <- indices_data %>% 
+  filter(!is.na(ipc_vix)) %>% 
+  ggplot(aes(date, mexbol_ipc)) +
+  geom_line(colour = amazing_colors[1]) +
+  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+  scale_x_date(breaks = "1 year", labels = scales::date_format("%Y")) +
+  labs(
+    title = "IPC Index & IPC VIX Volatility Index",
+    subtitle = "(2015 - 2019)",
+    x = NULL,
+    y = "S&P/BMV IPC"
+  )
+  
+
+# Build IPC VIX plot
+plot_ipcvix <- indices_data %>% 
+  filter(!is.na(ipc_vix)) %>% 
+  ggplot(aes(date, ipc_vix)) +
+  geom_line(colour = amazing_colors[2]) +
+  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+  scale_x_date(breaks = "1 year", labels = scales::date_format("%Y")) +
+  labs(
+    x = NULL,
+    y = "IPC VIX"
+  )
+
+# Print plot
+cowplot::plot_grid(plot_ipc2, 
+                   plot_ipcvix, 
+                   ncol = 1,
+                   rel_heights = c(1, 1))
+```
+
+We can repeat the plots but with a smooth average on top, so we see the trend along time:
+
+```{r, layout="l-body-outset"}
+# Build IPC plot
+plot_ipc <- indices_data %>% 
+  filter(!is.na(vimex)) %>% 
+  ggplot(aes(date, mexbol_ipc)) +
+  geom_line(colour = amazing_colors[1]) +
+  geom_smooth(colour = amazing_colors[3]) +
+  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+  scale_x_date(breaks = "2 years", labels = scales::date_format("%Y")) +
+  labs(
+    title = "IPC Index & VIMEX Volatility Index",
+    subtitle = "(2005 - 2019)",
+    x = NULL,
+    y = "S&P/BMV IPC"
+  )
+
+
+# Build VIMEX plot
+plot_vimex <- indices_data %>% 
+  filter(!is.na(vimex)) %>% 
+  ggplot(aes(date, vimex)) +
+  geom_line(colour = amazing_colors[2]) +
+  geom_smooth(colour = amazing_colors[4]) +
+  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+  scale_x_date(breaks = "2 years", labels = scales::date_format("%Y")) +
+    labs(
+    x = NULL,
+    y = "VIMEX"
+  )
+
+# Print plot
+cowplot::plot_grid(plot_ipc, 
+                   plot_vimex, 
+                   ncol = 1,
+                   rel_heights = c(1, 1))
+```
+
+
+```{r, layout="l-body-outset"}
+# Build IPC plot with new title
+plot_ipc2 <- indices_data %>% 
+  filter(!is.na(ipc_vix)) %>% 
+  ggplot(aes(date, mexbol_ipc)) +
+  geom_line(colour = amazing_colors[1]) +
+  geom_smooth(colour = amazing_colors[3]) +
+  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+  scale_x_date(breaks = "1 year", labels = scales::date_format("%Y")) +
+  labs(
+    title = "IPC Index & IPC VIX Volatility Index",
+    subtitle = "(2015 - 2019)",
+    x = NULL,
+    y = "S&P/BMV IPC"
+  )
+  
+
+# Build IPC VIX plot
+plot_ipcvix <- indices_data %>% 
+  filter(!is.na(ipc_vix)) %>% 
+  ggplot(aes(date, ipc_vix)) +
+  geom_line(colour = amazing_colors[2]) +
+  geom_smooth(colour = amazing_colors[4]) +
+  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+  scale_x_date(breaks = "1 year", labels = scales::date_format("%Y")) +
+  labs(
+    x = NULL,
+    y = "IPC VIX"
+  )
+
+# Print plot
+cowplot::plot_grid(plot_ipc2, 
+                   plot_ipcvix, 
+                   ncol = 1,
+                   rel_heights = c(1, 1))
 ```
 
