@@ -721,3 +721,8 @@ cowplot::plot_grid(plot_ipc2,
                    rel_heights = c(1, 1))
 ```
 
+
+```{r}
+IPC %>% tail()
+```
+
