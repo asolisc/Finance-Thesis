@@ -570,6 +570,16 @@ indices_data
 ```
 
 
+```{r}
+indices_data %>% 
+  pivot_longer(cols = contains("x"), )
+```
+
+
+
+
+
+
 Let's visualize the daily data for the IPC and the VIMEX:
 
 ```{r, layout="l-body-outset"}
@@ -683,6 +693,17 @@ cowplot::plot_grid(plot_ipc,
                    rel_heights = c(1, 1))
 ```
 
+```{r}
+ggsave(
+  filename = "ipc-vimex.png",
+  units = "in",
+  width = 8,
+  height = 8 * 1.61803398875,
+  path = "../../02-Plots/",
+  dpi = 400,
+  device = "png"
+)
+```
 
 ```{r, layout="l-body-outset"}
 # Build IPC plot with new title
@@ -716,13 +737,10 @@ plot_ipcvix <- indices_data %>%
 
 # Print plot
 cowplot::plot_grid(plot_ipc2, 
-                   plot_ipcvix, 
-                   ncol = 1,
-                   rel_heights = c(1, 1))
+                          plot_ipcvix, 
+                          ncol = 1,
+                          rel_heights = c(1, 1))
 ```
 
 
-```{r}
-IPC %>% tail()
-```
 
