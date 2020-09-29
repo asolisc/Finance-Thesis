@@ -693,17 +693,6 @@ cowplot::plot_grid(plot_ipc,
                    rel_heights = c(1, 1))
 ```
 
-```{r}
-ggsave(
-  filename = "ipc-vimex.png",
-  units = "in",
-  width = 8,
-  height = 8 * 1.61803398875,
-  path = "../../02-Plots/",
-  dpi = 400,
-  device = "png"
-)
-```
 
 ```{r, layout="l-body-outset"}
 # Build IPC plot with new title

@@ -1,12 +1,17 @@
 ---
 title: "Working with the Volume Data"
 description: |
-  EDA for Volume Data
+  Exploratory Data Analysis for Volume Data
 author:
   - name: Alexis Solis Cancino
+    url: alexis.solisc@gmail.com
     affiliation: ITAM
 date: "`r Sys.Date()`"
-output: distill::distill_article
+output: 
+  distill::distill_article:
+    toc: true
+    toc_depth: 2
+    css: "D:/11-Estancia/Finance-Thesis/05-Resources/styles.css"
 editor_options: 
   chunk_output_type: console
 ---
@@ -31,99 +36,29 @@ knitr::opts_chunk$set(
 ## Exploratory Data Analysis for the Volume Data
 
 ```{r}
+# Data wrangling
+library(tidyverse)
 library(lubridate)
 library(glue)
 library(arrow)
 library(skimr)
 library(gt)
+
+# Plots
 library(patchwork)
-library(tidyverse)
-library(ghibli)
-```
+library(cowplot)
 
+# Path management
+library(here)
 
-```{r}
-# --- Setup the ggplot theme ---
-
-# ggplot2 function for theme:
-theme_roboto <- function(){
-  
-  theme_minimal(base_family = "Roboto Condensed") +
-    theme(
-      panel.grid.minor.x = element_blank(),
-      panel.grid.minor.y = element_blank()
-    )
-  
-}
-
-# set the theme:
-ggplot2::theme_set(theme_roboto())
-```
-
-
-```{r}
-scale_ghibli_d <- function() {
-  ghibli::scale_fill_ghibli_d("YesterdayMedium", direction = -1)
-}
-
-scale_ghibli_c <- function() {
-  ghibli::scale_fill_ghibli_c("YesterdayMedium", direction = -1)
-}
-
-colour_ghibli_d <- function() {
-  ghibli::scale_color_ghibli_d("YesterdayMedium", direction = -1)
-}
-
-colour_ghibli_c <- function() {
-  ghibli::scale_color_ghibli_c("YesterdayMedium", direction = -1)
-}
-
-options
-
-options(ggplot2.discrete.fill = scale_ghibli_d(),
-        ggplot2.continuous.fill = scale_ghibli_c(),
-        ggplot2.discrete.colour = colour_ghibli_d(),
-        ggplot2.continuous.colour = colour_ghibli_c()
-        )
-```
-
-
-```{r}
-# --- setup the error search engine ---
-
-search_last_error_on_so <- function() {
-  tr <- .traceback()
-  if(!length(tr)) {
-    return(NULL)
-  }
-  err_msg <- tryCatch(
-    eval(parse(text = tr[[1]])),
-    error = function(e) paste0("Error: ", e$message)
-  )
-  browseURL(paste0('https://stackoverflow.com/search?q=', err_msg))
-}
-
-# options(error = search_last_error_on_so)
-
-```
-
-
-
-```{r, include=FALSE}
-# Setup fonts:
-library(extrafont)
-loadfonts(device = "win")
-```
-
-```{r}
-# font_add_google(name = "IBM Plex Sans Condensed", family = "IBM Plex Sans Condensed")
-# showtext_auto()
+# Source plot theme
+source(here("05-Resources", "ggplot2_themes.R"))
 ```
 
 
 ```{r}
 # --- Read the data in parquet file ---
-volume_data <- read_parquet(file = "01_data/volume.parquet")
+volume_data <- read_parquet(file = here("01-Data", "parquet", "IPC_fr.parquet"))
 ```
 
 By doing a quick inspection, we see that there are: 
@@ -145,7 +80,7 @@ random_date_1 <- ymd('20080915')
 p1 <- volume_data %>% 
   filter(tidy_date == random_date_1) %>%
   ggplot(aes(tidy_time, volume)) +
-   geom_col(alpha = 0.9, fill = tidyquant::palette_light()[6]) +
+   geom_col(alpha = 0.9, fill = amazing_colors[1]) +
   scale_x_time(
     labels = scales::label_time("%H:%M"),
     breaks = hm('08:00') + minutes(x = seq(30,430, by = 30)),
@@ -165,7 +100,7 @@ random_date_2 <- ymd('20080917')
 p2 <- volume_data %>% 
   filter(tidy_date == random_date_2) %>% 
   ggplot(aes(tidy_time, volume)) +
-  geom_col(alpha = 0.9, fill = tidyquant::palette_light()[6]) +
+  geom_col(alpha = 0.9, fill = amazing_colors[1]) +
   scale_x_time(
     labels = scales::label_time("%H:%M"),
     breaks = hm('08:00') + minutes(x = seq(30,430, by = 30)),
@@ -192,7 +127,7 @@ p3 <- volume_data %>%
   filter(!is.na(new_volume)) %>% 
   relocate(new_volume, volume) %>% 
   ggplot(aes(tidy_time, new_volume)) +
-  geom_col(alpha = 0.9, fill = tidyquant::palette_light()[1]) +
+  geom_col(alpha = 0.9, fill = amazing_colors[1]) +
   # geom_smooth(
   #   formula = y ~ x, 
   #   method = 'loess'
@@ -217,7 +152,7 @@ p4 <- volume_data %>%
   filter(!is.na(new_volume)) %>% 
   relocate(new_volume, volume) %>% 
   ggplot(aes(tidy_time, new_volume)) +
-  geom_col(alpha = 0.9, fill = tidyquant::palette_light()[1]) +
+  geom_col(alpha = 0.9, fill = amazing_colors[1]) +
   # geom_smooth(
   #   formula = y ~ x, 
   #   method = 'loess'
@@ -239,7 +174,6 @@ p4 <- volume_data %>%
 p3 / p4
 ```
 
-
 ... which looks correct.
 
 Now, this situation begs the question: will this transformation work for **all days** in the dataset? Let's try another day:
@@ -253,7 +187,7 @@ volume_data %>%
   filter(!is.na(new_volume)) %>% 
   relocate(new_volume, volume) %>% 
   ggplot(aes(tidy_time, new_volume)) +
-  geom_col(alpha = 0.9, fill = tidyquant::palette_light()[1]) +
+  geom_col(alpha = 0.9, fill = amazing_colors[2]) +
   # geom_smooth(
   #   formula = y ~ x, 
   #   method = 'loess'
@@ -360,8 +294,8 @@ We can create a histogram for the volume data. In this case we've plotted the hi
 volume_clean %>%
   mutate(new_volume = log(new_volume)) %>% 
   ggplot(aes(new_volume)) +
-  geom_histogram(fill = tidyquant::palette_light()[6],
-                 colour = tidyquant::palette_light()[1],
+  geom_histogram(fill = amazing_colors[4],
+                 colour = amazing_colors[1],
                  bins = 50) +
   scale_y_continuous(
     labels = scales::number_format(big.mark = ",")
@@ -383,8 +317,8 @@ volume_clean %>%
   mutate(new_volume = log(new_volume)) %>% 
   filter(tidy_year >= 2013) %>% 
   ggplot(aes(new_volume)) +
-  geom_histogram(fill = tidyquant::palette_light()[6],
-                 colour = tidyquant::palette_light()[1],
+  geom_histogram(fill = amazing_colors[4],
+                 colour = amazing_colors[1],
                  bins = 50) +
   facet_wrap(~ tidy_year, scales = "free") +
   scale_y_continuous(
@@ -450,14 +384,16 @@ volume_subgrid %>%
   arrange(-mean_volume) %>%
   
   ggplot(aes(subgrid_id, mean_volume)) +
-  geom_col(fill = "#26432FFF") +
+  geom_col(fill = amazing_colors[1]) +
   
   scale_x_discrete(guide = guide_axis(n.dodge = 2)) +
   
   scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
   
-  labs(x = "Time Grid (half-hour)",
-       y = "Average Volume per Grid")
+  labs(
+    title = "Average Volume per Grid",
+    y = "Average Volume"
+    )
 ```
 
 
@@ -485,14 +421,17 @@ volume_weeks %>%
   ggplot(aes(x = tidy_week,
              y = average_volume)) +
   
-  geom_col(fill = "#26432FFF") +
+  geom_col(fill = amazing_colors[1]) +
   
   scale_x_discrete(breaks = seq(1, 53, by = 1), guide = guide_axis(angle = 90)) +
   
   scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
   
-  labs(x = "Week Number",
-       y = "Average Volume per Week")
+  labs(
+    title = "Average Volume per Week",
+    x = "Week Number",
+    y = "Average Volume"
+    )
 ```
 
 
@@ -503,7 +442,7 @@ volume_weeks %>%
   group_by(tidy_wday) %>% 
   summarise(avg_vol = mean(new_volume)) %>% 
   ggplot(aes(tidy_wday, avg_vol)) +
-  geom_col(fill = "#26432FFF") +
+  geom_col(fill = amazing_colors[4]) +
   scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
   labs(x = "Week Day",
        y = "Average Volume per Day of the Week")
