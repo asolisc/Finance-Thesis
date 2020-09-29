@@ -6,10 +6,11 @@ author:
   - name: Alexis Solis Cancino
     affiliation: ITAM
 date: "`r Sys.Date()`"
-output:
+output: 
   distill::distill_article:
     toc: true
     toc_depth: 2
+    css: "D:/11-Estancia/Finance-Thesis/05-Resources/styles.css"
 editor_options: 
   chunk_output_type: console
 ---
@@ -31,8 +32,6 @@ knitr::opts_chunk$set(
   # Latex figure environment
   fig.env = "figure"
 )
-
-library(xtable) # Creates tables that follow OUP guidelines; other options, such as kable, may also be workable
 
 
 # --- Load the libraries! ---
@@ -74,7 +73,7 @@ library(arrow)
 
 
 # --- Setup the ggplot theme ---
-source(file = "D:/01-Data-Science/03-Helper-Scripts/ggplot2_themes.R")
+source(here("05-Resources", "ggplot2_themes.R"))
 ```
 
 

@@ -43,7 +43,7 @@ library(here)
 
 
 # --- Source ggplot2 themes ---
-source("D:/01-Data-Science/03-Helper-Scripts/ggplot2_themes.R")
+source(here("05-Resources", "ggplot2_themes.R"))
 ```
 
 
