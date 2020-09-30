@@ -55,13 +55,12 @@ library(here)
 source(here("05-Resources", "ggplot2_themes.R"))
 ```
 
-
 ```{r}
 # --- Read the data in parquet file ---
 volume_data <- read_parquet(file = here("01-Data", "parquet", "IPC_fr.parquet"))
 ```
 
-By doing a quick inspection, we see that there are: 
+By doing a quick inspection, we see that there are:
 
 ```{r}
 volume_data %>%
@@ -70,7 +69,6 @@ volume_data %>%
 ```
 
 ... `269,189` zero-values in the data, so we'll filter those out.
-
 
 First, let's plot the volume on two random days:
 
@@ -269,7 +267,6 @@ volume_clean <-
   relocate(trade_id, tidy_time, new_volume, no_trades)
 ```
 
-
 Let's see some summary statistics on the volume data:
 
 ```{r}
@@ -286,7 +283,6 @@ volume_clean %>%
   fmt_number(columns = "Value", decimals = 0) %>% 
   gt::tab_header(title = "Volume Data Summary Statistics")
 ```
-
 
 We can create a histogram for the volume data. In this case we've plotted the histogram for the natural log of the `new_volume` variable.
 
@@ -335,7 +331,7 @@ volume_clean %>%
 
 ## Time Series for time subgrids.
 
-Now, we are going to build a plot for mean volume by half-hour subgrids. First we divide our data into 13 half-hour subgrids (from 08:00AM - 3:00PM). 
+Now, we are going to build a plot for mean volume by half-hour subgrids. First we divide our data into 13 half-hour subgrids (from 08:00AM - 3:00PM).
 
 ```{r}
 volume_subgrid <- volume_clean %>%
@@ -396,7 +392,6 @@ volume_subgrid %>%
     )
 ```
 
-
 ## Volume by week and by weekday
 
 Next, we can go ahead and do a similar analysis, but by week. To see which weeks in the year are the most active.
@@ -434,7 +429,6 @@ volume_weeks %>%
     )
 ```
 
-
 Finally, we do the analysis by day of the week. Interestingly, the most active weekday is Wednesday (with an average volume of 391,737), followed by Thursday (380,367) and Tuesday (378,052). Mondays are notably less active.
 
 ```{r, layout="l-body-outset"}
@@ -447,4 +441,3 @@ volume_weeks %>%
   labs(x = "Week Day",
        y = "Average Volume per Day of the Week")
 ```
-

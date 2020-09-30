@@ -456,18 +456,22 @@ In this case we've set the variable `threshold` to the value (`0.0012`) such tha
 
 Now, after all the data wrangling that we did, we still don't have a perfect time series, because it has some "holes" in it. We can check this by plotting, again, the number of log-returns we have per hour:
 
+
+
 ```{r, layout="l-body-outset", fig.width=8, fig.asp=0.618}
-IPC_fr %>% mutate(tidy_hour = as.factor(tidy_hour)) %>% 
-  count(tidy_hour, sort = T, name = "trades_per_hour") %>% 
-  # mutate(tidy_hour = fct_reorder(tidy_hour, .x = trades_per_hour, .desc = T)) %>%
-  ggplot(aes(tidy_hour, trades_per_hour)) +
-  geom_col(fill = amazing_colors[1]) +
-  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
-  labs(
-    title = "No. Trades per Hour in the Sample",
-    x = "Hour",
-    y = NULL
-  )
+# --- esta gráfica no funciona ---
+
+# IPC_fr %>% mutate(tidy_hour = as.factor(tidy_hour)) %>% 
+#   count(tidy_hour, sort = T, name = "trades_per_hour") %>% 
+#   # mutate(tidy_hour = fct_reorder(tidy_hour, .x = trades_per_hour, .desc = T)) %>%
+#   ggplot(aes(tidy_hour, trades_per_hour)) +
+#   geom_col(fill = amazing_colors[1]) +
+#   scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+#   labs(
+#     title = "Number of log-returns per Hour in the Sample",
+#     x = "Hour",
+#     y = NULL
+#   )
 ```
 
 
@@ -555,4 +559,12 @@ IPC_padded_tbl <-
   # Rearrange the order of the columns
   select(trade_id, tidy_date, tidy_time, log_ret, dplyr::everything())
 ```
+
+
+
+
+
+
+
+
 
