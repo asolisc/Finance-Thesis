@@ -94,7 +94,7 @@ columns_to_remove <- map_df(IPC, ~ sum(is.na(.))) %>%
 columns_to_remove
 ```
 
-We name the *clean* dataset as `IPC_ip` (IPC intraday prices) and again see the column names and each data type.
+We name the *clean* dataset as `IPC_ip` (*IPC intraday prices*) and again see the column names and each data type.
 
 ```{r}
 # Get a new dataset without the selected columns
@@ -109,18 +109,37 @@ IPC_ip %>% glimpse()
 
 # 2. Feature Engineering & Data Wrangling
 
-We then carry on with the analysis by creating some new variables (a.k.a. *Feature Engineering*) and manipulating the data.
+We then carry on with the analysis by creating some new variables (a.k.a. *Feature Engineering*) and manipulating the data. The first manipulations we do are the following:
 
-First, we create a `tidy_date` variable where we store the date according to the *ISO 8601* standard that states that dates should be expressed in the `YYYY-MM-DD` format. In consequence, the `raw_date` column is dropped and we keep the newly created `tidy_date` variable instead.
+1.  First, a `tidy_date` variable is created, where the date is parsed according to the *ISO 8601* standard that states that dates should be expressed in the `YYYY-MM-DD` format. In consequence, the `raw_date` column is dropped and its replacement will be the newly created `tidy_date` variable.
 
-Also, we drop the `ticker`, `type`, `open`, `high`, and `low` columns because we think they are of no use for the analysis.
+2.  The `raw_time` column is replaced for the `tidy_time` variable, which parses the time correctly.
 
-We store the modified data into the `IPC_tbl` (IPC tibble) object.
+3.  The `ticker`, `type`, `open`, `high`, and `low` columns are removed because (we think )they are of no use for the analysis.
+
+4.  We rename the `last` variable as `last_price`.
+
+The modified data is stored into the `IPC_tbl` (*IPC tibble*) object.
 
 ```{r}
-IPC_tbl <- IPC_ip %>% as_tibble() %>%
-  mutate(tidy_date = lubridate::ymd(raw_date)) %>%
-  select(-c(raw_date, ticker, type, open, high, low))
+IPC_tbl <- IPC_ip %>% 
+  
+  # Convert to tibble.
+  as_tibble() %>%
+  
+  # Create time variables: tidy_date, tidy_time, tidy_dttm.
+  mutate(tidy_date = lubridate::ymd(raw_date),
+         tidy_time = hms::as_hms(raw_time)
+         ) %>%
+  
+  # Remove some columns.
+  select(-c(raw_date, raw_time, ticker, type, open, high, low)) %>% 
+  
+  # Get newly created variable to the beginning of tibble.
+  relocate(starts_with("tidy"), .before = 1) %>% 
+  
+  # Rename "last" variable.
+  rename(last_price = last)
 
 # Remove the older df
 # rm(IPC_ip)
@@ -128,21 +147,78 @@ IPC_tbl <- IPC_ip %>% as_tibble() %>%
 
 ### Time Series Index
 
-Before we continue, we must extract the so called *time series index*. In this case, the variable by which the time series is indexed is the `tidy_date` variable.
+Before we continue, we must create the so called **time series index**. To achieve this, a `dttm` (*datetime*) variable is created, which results from combining the `tidy_date` variable and `tidy_time` variable. This combined variable gets the name of `tidy_dttm`. In this case, the variable by which the time series will be indexed is the `tidy_dttm` variable. Below we print a small sample (10 rows) of this variable:
 
-```{r get-index}
-# We'll use the tk_index() function from the timetk package.
-index_date <- IPC_tbl %>% 
-  timetk::tk_index(timetk_idx = tidy_date)
+```{r}
+IPC_tbl <- IPC_tbl %>% 
+  
+  # Create time series index: tidy_dttm.
+  mutate(tidy_dttm = ymd_hms(str_c(tidy_date, tidy_time))) %>% 
+  
+  relocate(tidy_dttm, .before = 1)
 
-index_date %>% str()
+IPC_tbl %>% select(tidy_dttm)
 ```
 
-### Extracting Data from the Index
-
-We can then extract several time-related variables from this time series index.
-
 ### Time Series Signature
+
+We can then extract several time-related variables from this time series index. In this case, we'll get *20 different time-related variables*. We'll call this **The Time Series Signature**, which is a collection of time-related variables that will help for feature engineering and modeling. The most important ones are:
+
+-   `index`: The time-index variable that is being decomposed.
+-   `index_date`: The date component of the `index` variable.
+-   `index_num`: The numeric value of the time series index (in seconds). The base is `1970-01-01 00:00:00` which has the value of 0.
+-   `diff`: The difference (in seconds) from the previous numeric `index` value.
+-   `year`: The year of the *time series* `index`.
+-   `half`: The *half component* of the index (i.e. to which semester does the date belong to).
+-   `quarter`: The *quarter component* of the index (i.e. to which quarter does the date belong to).
+-   `month`: The *month component* of the index (with base 1 - that is, January = 1 and so on).
+-   `month_label`: The three-letter month label as an ordered categorical variable. It begins with *Jan* and ends with *Dec*.
+-   `day`: The *day* component of the `index`.
+-   `hour`: The *hour* component of the `index` (24-hour scale).
+-   `minute`: The *minute* component of the `index` (from 0 - 59).
+-   `second`: The *second* component of the time `index` (from 0 - 59).
+-   `wday`: The day of the week with base 1. Monday = 1 and Sunday = 7.
+-   `wday_label`: The three-letter label for day of the week as an ordered categorical variable. It begins with `Mon` and ends with `Sun`.
+-   `qday`: The day of the quarter.
+-   `yday`: The day of the year.
+-   `mweek`: The week of the month.
+-   `week`: The week number of the year (Monday is considered the first day).
+-   `date_change`: A *boolean* variable. `TRUE` indicates that the date has changed against the previous index value. `FALSE` indicates no change.
+-   `mday7`: The integer division of the day of the month by seven, which returns the *nth* instance the day has appeared in that month.
+
+```{r}
+ts_signature <- IPC_tbl %>% 
+  select(tidy_dttm) %>% 
+  
+  # Rename tidy_dttm variable as "index"
+  rename(index = tidy_dttm) %>% 
+  
+  # Create time series signature
+  mutate(
+    index_date  = as_date(index),
+    index_num   = as.numeric(index),
+    diff        = index_num - lag(index_num),
+    year        = year(index),
+    half        = semester(index, with_year = FALSE),
+    quarter     = quarter(index),
+    month       = month(index),
+    month_label = month(index, label = TRUE),
+    day         = day(index),
+    hour        = hour(index),
+    minute      = minute(index),
+    second      = second(index),
+    wday        = wday(index, week_start = 1),
+    wday_label  = wday(index, label = TRUE),
+    qday        = qday(index),
+    yday        = yday(index),
+    # mweek       =
+    # week        = lubridate::week(),
+    date_change = if_else(index_date - lag(index_date) == 0, FALSE, TRUE),
+    mday7       = day %% 7
+  )
+```
+
+### Augmenting the Time Series
 
 Next, we create some time-related variables, such as:
 
