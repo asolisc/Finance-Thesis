@@ -126,7 +126,23 @@ IPC_tbl <- IPC_ip %>% as_tibble() %>%
 # rm(IPC_ip)
 ```
 
-### Time-Series Signature
+### Time Series Index
+
+Before we continue, we must extract the so called *time series index*. In this case, the variable by which the time series is indexed is the `tidy_date` variable.
+
+```{r get-index}
+# We'll use the tk_index() function from the timetk package.
+index_date <- IPC_tbl %>% 
+  timetk::tk_index(timetk_idx = tidy_date)
+
+index_date %>% str()
+```
+
+### Extracting Data from the Index
+
+We can then extract several time-related variables from this time series index.
+
+### Time Series Signature
 
 Next, we create some time-related variables, such as:
 
@@ -140,9 +156,9 @@ Next, we create some time-related variables, such as:
 
 `tidy_hour`: a `dbl` that stores the hour (we have data from 5 through 20 hours).
 
-`tidy_minute`: a `dbl` that stores the minute of the trade (from 0 through 59).
+`tidy_minute`: a `dbl` that stores the minute of the reported price (from 0 through 59).
 
-`tidy_time`: an `hms` (hour-minute-second) object that stores the time of the trade.
+`tidy_time`: an `hms` (hour-minute-second) object that stores the time of the reported price.
 
 ```{r}
 IPC_tbl <- 
