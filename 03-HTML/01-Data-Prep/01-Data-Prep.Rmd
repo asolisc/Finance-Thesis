@@ -147,7 +147,7 @@ IPC_tbl <- IPC_ip %>%
 
 ### Time Series Index
 
-Before we continue, we must create the so called **time series index**. To achieve this, a `dttm` (*datetime*) variable is created, which results from combining the `tidy_date` variable and `tidy_time` variable. This combined variable gets the name of `tidy_dttm`. In this case, the variable by which the time series will be indexed is the `tidy_dttm` variable. Below we print a small sample (10 rows) of this variable:
+Before we continue, we must create the so called **time series index**. To achieve this, a `dttm` (*datetime*) variable is created, which is the result of combining the `tidy_date` variable and the `tidy_time` variable. This combination gets the name of `tidy_dttm`. In this case, this is the variable by which the time series will be indexed. Below we print a small sample (10 rows) of this variable index:
 
 ```{r}
 IPC_tbl <- IPC_tbl %>% 
@@ -160,12 +160,80 @@ IPC_tbl <- IPC_tbl %>%
 IPC_tbl %>% select(tidy_dttm)
 ```
 
+Next, we can get the first and last values in the time series, to know the *edges*, so to speak. We name these values `left_edge` (first value) and `right_edge` (last value), respectively.
+
+```{r}
+left_edge <- IPC_tbl %>% 
+  
+  # Arrange in descending tidy_dttm order
+  arrange(tidy_dttm) %>% 
+  
+  # Get the vector
+  pull(tidy_dttm) %>% 
+  
+  # Get the first element of the vector
+  first()
+
+right_edge <- IPC_tbl %>% 
+  
+  # Arrange in descending tidy_dttm order
+  arrange(tidy_dttm) %>% 
+  
+  # Get the vector
+  pull(tidy_dttm) %>% 
+  
+  # Get the last element of the vector
+  last()
+
+paste("The first date-time in our data is:", left_edge) 
+paste("The last date-time in our data is:", right_edge) 
+```
+
+These values are incorrect; the first value in our time-series should be `1996-01-02 08:30:00` and the last one should be: `2018-06-05 15:00:00`. The Time Series Index will be defined based on the *correct* values. These will be created as the `first_dttm` and `last_dttm` variables.
+
+```{r}
+first_dttm <- left_edge %>% 
+  str_sub(1, 10) %>% 
+  paste("08:30:00") %>% 
+  as_datetime()
+
+last_dttm <- right_edge %>% 
+  str_sub(1, 10) %>% 
+  paste("15:00:00") %>% 
+  as_datetime()
+  
+```
+
+```{r}
+ts_index <- tibble(
+  
+  # Use timetk to create index
+  index = timetk::tk_make_timeseries(start_date = first_dttm, 
+                                     end_date = last_dttm, 
+                                     by = "60 sec")
+  ) %>% 
+  
+  # Filter for times between 08:30 and 15:00
+  filter(str_sub(index, -8, -1) %>% as_hms() >= as_hms("08:30:00"),
+         str_sub(index, -8, -1) %>% as_hms() <= as_hms("15:00:00")
+         )
+
+```
+
+Below we print the first 6 and last 6 values of our Time Series Index:
+
+```{r}
+ts_index %>% head()
+ts_index %>% tail()
+```
+
 ### Time Series Signature
 
 We can then extract several time-related variables from this time series index. In this case, we'll get *20 different time-related variables*. We'll call this **The Time Series Signature**, which is a collection of time-related variables that will help for feature engineering and modeling. The most important ones are:
 
 -   `index`: The time-index variable that is being decomposed.
 -   `index_date`: The date component of the `index` variable.
+-   `index_time`: The time component of the `index` variable.
 -   `index_num`: The numeric value of the time series index (in seconds). The base is `1970-01-01 00:00:00` which has the value of 0.
 -   `diff`: The difference (in seconds) from the previous numeric `index` value.
 -   `year`: The year of the *time series* `index`.
@@ -176,7 +244,6 @@ We can then extract several time-related variables from this time series index. 
 -   `day`: The *day* component of the `index`.
 -   `hour`: The *hour* component of the `index` (24-hour scale).
 -   `minute`: The *minute* component of the `index` (from 0 - 59).
--   `second`: The *second* component of the time `index` (from 0 - 59).
 -   `wday`: The day of the week with base 1. Monday = 1 and Sunday = 7.
 -   `wday_label`: The three-letter label for day of the week as an ordered categorical variable. It begins with `Mon` and ends with `Sun`.
 -   `qday`: The day of the quarter.
@@ -187,15 +254,12 @@ We can then extract several time-related variables from this time series index. 
 -   `mday7`: The integer division of the day of the month by seven, which returns the *nth* instance the day has appeared in that month.
 
 ```{r}
-ts_signature <- IPC_tbl %>% 
-  select(tidy_dttm) %>% 
-  
-  # Rename tidy_dttm variable as "index"
-  rename(index = tidy_dttm) %>% 
+ts_signature <- ts_index %>% 
   
   # Create time series signature
   mutate(
     index_date  = as_date(index),
+    index_time  = str_sub(index, -8, -1) %>% as_hms(),
     index_num   = as.numeric(index),
     diff        = index_num - lag(index_num),
     year        = year(index),
@@ -206,16 +270,22 @@ ts_signature <- IPC_tbl %>%
     day         = day(index),
     hour        = hour(index),
     minute      = minute(index),
-    second      = second(index),
     wday        = wday(index, week_start = 1),
     wday_label  = wday(index, label = TRUE),
     qday        = qday(index),
     yday        = yday(index),
     # mweek       =
     # week        = lubridate::week(),
-    date_change = if_else(index_date - lag(index_date) == 0, FALSE, TRUE),
+    date_change = if_else(index_date == lag(index_date), FALSE, TRUE),
     mday7       = day %% 7
-  )
+  ) %>% 
+  
+  # Get rid of weekends
+  filter(wday_label %in% c("Mon", "Tue", "Wed", "Thu", "Fri"))
+```
+
+```{r}
+ts_signature %>% distinct(second)
 ```
 
 ### Augmenting the Time Series
@@ -265,6 +335,10 @@ IPC_tbl <-
 # Finally take a thorough look at the data:
 IPC_tbl %>% skimr::skim()
 ```
+
+## Padding the Time Series
+
+Next, we need to pad the time series to fill in the gaps. We will use the nearest price to fill the data for a 1-minute grid.
 
 ## 2.1 Computing Intraday Log-Returns
 
