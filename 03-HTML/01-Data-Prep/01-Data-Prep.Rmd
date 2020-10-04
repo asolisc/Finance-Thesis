@@ -46,6 +46,10 @@ library(here)
 source(here("05-Resources", "ggplot2_themes.R"))
 ```
 
+```{r}
+tictoc::tic()
+```
+
 # 1. Introduction & Importing Data
 
 We'll work with intraday data for the *S&P/BMV IPC Equity Index*. The data consists of `n = 2,133,890` observations and `k = 23` variables. The time-series is composed of prices and trades per minute, spanning from the beginning of 1996 through the first half of 2018.
@@ -152,7 +156,7 @@ Before we continue, we must create the so called **time series index**. To achie
 ```{r}
 IPC_tbl <- IPC_tbl %>% 
   
-  # Create time series index: tidy_dttm.
+  # Add time series index: tidy_dttm.
   mutate(tidy_dttm = ymd_hms(str_c(tidy_date, tidy_time))) %>% 
   
   relocate(tidy_dttm, .before = 1)
@@ -201,7 +205,6 @@ last_dttm <- right_edge %>%
   str_sub(1, 10) %>% 
   paste("15:00:00") %>% 
   as_datetime()
-  
 ```
 
 ```{r}
@@ -217,7 +220,6 @@ ts_index <- tibble(
   filter(str_sub(index, -8, -1) %>% as_hms() >= as_hms("08:30:00"),
          str_sub(index, -8, -1) %>% as_hms() <= as_hms("15:00:00")
          )
-
 ```
 
 Below we print the first 6 and last 6 values of our Time Series Index:
@@ -249,9 +251,9 @@ We can then extract several time-related variables from this time series index. 
 -   `qday`: The day of the quarter.
 -   `yday`: The day of the year.
 -   `mweek`: The week of the month.
--   `week`: The week number of the year (Monday is considered the first day).
--   `date_change`: A *boolean* variable. `TRUE` indicates that the date has changed against the previous index value. `FALSE` indicates no change.
+-   `week`: The week number of the year.
 -   `mday7`: The integer division of the day of the month by seven, which returns the *nth* instance the day has appeared in that month.
+-   `date_change`: A *boolean* variable. `TRUE` indicates that the date has changed against the previous index value. `FALSE` indicates no change.
 
 ```{r}
 ts_signature <- ts_index %>% 
@@ -260,51 +262,91 @@ ts_signature <- ts_index %>%
   mutate(
     index_date  = as_date(index),
     index_time  = str_sub(index, -8, -1) %>% as_hms(),
-    index_num   = as.numeric(index),
-    diff        = index_num - lag(index_num),
+    # index_num   = as.numeric(index),
+    diff        = as.numeric(index) - lag(as.numeric(index)),
     year        = year(index),
-    half        = semester(index, with_year = FALSE),
-    quarter     = quarter(index),
+    # half        = semester(index, with_year = FALSE),
+    # quarter     = quarter(index),
     month       = month(index),
-    month_label = month(index, label = TRUE),
+    # month_label = month(index, label = TRUE),
     day         = day(index),
     hour        = hour(index),
     minute      = minute(index),
-    wday        = wday(index, week_start = 1),
+    # wday        = wday(index, week_start = 1),
     wday_label  = wday(index, label = TRUE),
-    qday        = qday(index),
-    yday        = yday(index),
+    # qday        = qday(index),
+    # yday        = yday(index),
     # mweek       =
     # week        = lubridate::week(),
-    date_change = if_else(index_date == lag(index_date), FALSE, TRUE),
-    mday7       = day %% 7
-  ) %>% 
-  
-  # Get rid of weekends
-  filter(wday_label %in% c("Mon", "Tue", "Wed", "Thu", "Fri"))
+    # mday7       = day %% 7,
+    date_change = if_else(index_date == lag(index_date), FALSE, TRUE)
+  )
 ```
 
+Our time series signature object currently includes weekends and dates that may not be present in our data. The next step then, is to remove dates that don't match those from the data. This will also get rid of weekends, of course.
+
 ```{r}
-ts_signature %>% distinct(second)
+ts_signature2 <- ts_signature %>% 
+
+  # Get rid of absent dates  
+  filter(index_date %in% IPC_tbl$tidy_date)
+```
+
+Lastly, we do a quick check for:
+
+1.  The time series signature doesn't contain weekend days. We do this by printing the unique values for the weekday label stored in the `wday_label` variable.
+
+```{r}
+ts_signature2 %>% 
+  distinct(wday_label)
+```
+
+2.  The time signatures only contains hours from `08:00` through `15:00`. We print the first 10 unique values of the `index_time` variable. We also print the last 10 unique values.
+
+```{r}
+# First 10 unique values
+ts_signature2 %>% 
+  distinct(index_time)
+
+# Last 10 unique values
+ts_signature2 %>% 
+  arrange(-index_time) %>% 
+  distinct(index_time)
+```
+
+3.  The number of different dates in the original dataset is equal to the number of different dates in the time series signature.
+
+```{r}
+rows_signature <- ts_signature2 %>% 
+  distinct(index_date) %>% 
+  nrow()
+
+rows_prices <- IPC_tbl %>% 
+  distinct(tidy_date) %>% 
+  nrow()
+
+paste('The difference in unique dates from the datasets is:', 
+      abs(rows_signature - rows_prices))
 ```
 
 ### Augmenting the Time Series
 
-Next, we create some time-related variables, such as:
+Next, we add the time series signature to our original data.
 
-`tidy_year`: a `dbl` that stores the year (from 1996 - 2018).
+Note: this task had to be done in a distributed computing environment with help of the `sparklyr` library, owing to the sheer amount of RAM memory the `join` operations needed.
 
-`tidy_month`: a `dbl` that stores the month as a number (from 1 through 12).
+```{r}
+source(here("spark_code.R"))
+```
 
-`tidy_mday`: a `dbl` that stores the day number within each month (from 1 through 31).
+```{r}
+directory_path <- here("01-Data", "joined.csv")
 
-`tidy_wday`: a categorical variable (`fctr`) that includes: `Mon` `Tue` `Wed` `Thu` `Fri`.
+# Get each file's full path
+joined_IPC <- dir(directory_path, full.names = T) %>%
+  map_df(read_csv) %>% as_tibble()
 
-`tidy_hour`: a `dbl` that stores the hour (we have data from 5 through 20 hours).
-
-`tidy_minute`: a `dbl` that stores the minute of the reported price (from 0 through 59).
-
-`tidy_time`: an `hms` (hour-minute-second) object that stores the time of the reported price.
+```
 
 ```{r}
 IPC_tbl <- 
@@ -317,28 +359,28 @@ IPC_tbl <-
     tidy_month  = lubridate::month(tidy_date),
     tidy_mday   = lubridate::mday(tidy_date),
     tidy_wday   = lubridate::wday(tidy_date, label = T, locale = "English"),
-    tidy_hour   = lubridate::hour(raw_time),
-    tidy_minute = lubridate::minute(raw_time),
-    tidy_time   = hms::as_hms(raw_time)
+    tidy_hour   = lubridate::hour(tidy_time),
+    tidy_minute = lubridate::minute(tidy_time),
+    
+    # Variables to keep track of time jumps
+    date_num    = as.numeric(tidy_dttm),
+    diff        = date_num - lag(date_num)
   ) %>%
   
   # Create the trade_id variable
   mutate(trade_id = seq(1:nrow(IPC))) %>%
   
-  # Remove the raw_time column
-  select(-raw_time) %>%
-  
   # Rearrange the order of the columns:
-  select(trade_id, tidy_date, tidy_time, dplyr::everything())
+  select(trade_id, tidy_dttm, diff, tidy_date, tidy_time, dplyr::everything())
 
 
 # Finally take a thorough look at the data:
-IPC_tbl %>% skimr::skim()
+# IPC_tbl %>% skimr::skim()
 ```
 
 ## Padding the Time Series
 
-Next, we need to pad the time series to fill in the gaps. We will use the nearest price to fill the data for a 1-minute grid.
+Next, we need to pad the time series to fill in the gaps. We will use the **nearest past price** to fill the data for a 1-minute grid. The only exception are the first six prices (which are missing), where we will use the **nearest future price**.
 
 ## 2.1 Computing Intraday Log-Returns
 
@@ -347,7 +389,7 @@ Next, we compute the intraday returns and assign them to the `log_ret` variable.
 ```{r}
 (IPC_ret_tbl <-
   IPC_tbl %>%
-  dplyr::mutate(log_ret = log(last) - lag(log(last))) %>%
+  dplyr::mutate(log_ret = log(last_price) - lag(log(last_price))) %>%
    
   # The following lines filter out the returns with NA:
   # dplyr::filter(!is.na(log_ret)) %>%
