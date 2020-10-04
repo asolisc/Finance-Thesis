@@ -119,7 +119,7 @@ We then carry on with the analysis by creating some new variables (a.k.a. *Featu
 
 2.  The `raw_time` column is replaced for the `tidy_time` variable, which parses the time correctly.
 
-3.  The `ticker`, `type`, `open`, `high`, and `low` columns are removed because (we think )they are of no use for the analysis.
+3.  The `no_bids`, `no_ask`, `average_price`, `ticker`, `type`, `open`, `high`, and `low` columns are removed because (we think ) they are of no use for the analysis.
 
 4.  We rename the `last` variable as `last_price`.
 
@@ -128,21 +128,21 @@ The modified data is stored into the `IPC_tbl` (*IPC tibble*) object.
 ```{r}
 IPC_tbl <- IPC_ip %>% 
   
-  # Convert to tibble.
+  # Convert to tibble
   as_tibble() %>%
   
-  # Create time variables: tidy_date, tidy_time, tidy_dttm.
+  # Create time variables: tidy_date, tidy_time, tidy_dttm
   mutate(tidy_date = lubridate::ymd(raw_date),
          tidy_time = hms::as_hms(raw_time)
          ) %>%
   
-  # Remove some columns.
-  select(-c(raw_date, raw_time, ticker, type, open, high, low)) %>% 
+  # Remove some columns
+  select(-c(raw_date, raw_time, ticker, type, open, high, low, no_bids, no_ask, average_price)) %>% 
   
-  # Get newly created variable to the beginning of tibble.
+  # Get newly created variable to the beginning of tibble
   relocate(starts_with("tidy"), .before = 1) %>% 
   
-  # Rename "last" variable.
+  # Rename "last" variable
   rename(last_price = last)
 
 # Remove the older df
@@ -156,7 +156,7 @@ Before we continue, we must create the so called **time series index**. To achie
 ```{r}
 IPC_tbl <- IPC_tbl %>% 
   
-  # Add time series index: tidy_dttm.
+  # Add time series index: tidy_dttm
   mutate(tidy_dttm = ymd_hms(str_c(tidy_date, tidy_time))) %>% 
   
   relocate(tidy_dttm, .before = 1)
@@ -292,6 +292,14 @@ ts_signature2 <- ts_signature %>%
   filter(index_date %in% IPC_tbl$tidy_date)
 ```
 
+```{r}
+# Write csv file for Time Series Signature:
+ts_signature2 %>% write_csv(here("01-Data", "ts_signature.csv"))
+
+# Write csv file for IPC:
+IPC_tbl %>% write_csv(here("01-Data", "IPC_csv.csv"))
+```
+
 Lastly, we do a quick check for:
 
 1.  The time series signature doesn't contain weekend days. We do this by printing the unique values for the weekday label stored in the `wday_label` variable.
@@ -344,8 +352,23 @@ directory_path <- here("01-Data", "joined.csv")
 
 # Get each file's full path
 joined_IPC <- dir(directory_path, full.names = T) %>%
-  map_df(read_csv) %>% as_tibble()
+  map_df(read_csv) %>% 
+  
+  # Turn into tibble
+  as_tibble() %>%
+  
+  # Re-parse index_date correctly
+  mutate(index_date = as_date(index)) %>% 
+  
+  # Remove duplicate dttm column
+  select(-c(tidy_dttm)) %>% 
+  
+  relocate(last_price, .after = 1)
 
+```
+
+```{r}
+joined_IPC %>% filter(is.na(index))
 ```
 
 ```{r}

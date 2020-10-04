@@ -22,5 +22,13 @@ joined_tbl <- full_join(x = ts_signature_spark,
                                "index_time" = "tidy_time")) %>% 
   arrange(index_date, index_time)
 
+# Delete previous data
+if (fs::dir_exists(here("01-Data", "joined.csv")) == TRUE) {
+  fs::dir_delete(here("01-Data", "joined.csv"))
+}
 
+
+# Write new data
 joined_tbl %>% spark_write_csv(path = here("01-Data", "joined.csv"))
+
+sparklyr::spark_disconnect(sc = local_spark)
