@@ -46,10 +46,6 @@ library(here)
 source(here("05-Resources", "ggplot2_themes.R"))
 ```
 
-```{r}
-tictoc::tic()
-```
-
 # 1. Introduction & Importing Data
 
 We'll work with intraday data for the *S&P/BMV IPC Equity Index*. The data consists of `n = 2,133,890` observations and `k = 23` variables. The time-series is composed of prices and trades per minute, spanning from the beginning of 1996 through the first half of 2018.
@@ -90,7 +86,9 @@ We see that there are 10 columns (variables) that have all values as `NA`. We as
 ```{r}
 # Get which columns have all values as NAs.
 columns_to_remove <- map_df(IPC, ~ sum(is.na(.))) %>%
-  pivot_longer(cols = everything(), names_to = "variable", values_to = "no_missing") %>% 
+  pivot_longer(cols = everything(), 
+               names_to = "variable", 
+               values_to = "no_missing") %>% 
   filter(no_missing > 0) %>%
   pull(variable)
 
@@ -105,7 +103,7 @@ We name the *clean* dataset as `IPC_ip` (*IPC intraday prices*) and again see th
 IPC_ip <- IPC %>% select(-all_of(columns_to_remove))
 
 # Remove the older df
-# rm(IPC)
+rm(IPC)
 
 # Take a look at the data
 IPC_ip %>% glimpse()
@@ -146,7 +144,7 @@ IPC_tbl <- IPC_ip %>%
   rename(last_price = last)
 
 # Remove the older df
-# rm(IPC_ip)
+rm(IPC_ip)
 ```
 
 ### Time Series Index
@@ -164,7 +162,7 @@ IPC_tbl <- IPC_tbl %>%
 IPC_tbl %>% select(tidy_dttm)
 ```
 
-Next, we can get the first and last values in the time series, to know the *edges*, so to speak. We name these values `left_edge` (first value) and `right_edge` (last value), respectively.
+Next, in order to know the *edges*, so to speak, we can get the first and last values in the time series. We name these values `left_edge` (first value) and `right_edge` (last value), respectively.
 
 ```{r}
 left_edge <- IPC_tbl %>% 
@@ -207,27 +205,64 @@ last_dttm <- right_edge %>%
   as_datetime()
 ```
 
+### Adjustments to the Time Series Index
+
+Below, we print the first 10 values of the `ts_index` object (the *time series index*). We also print the last 10 values.
+
 ```{r}
+# Make index by using vectorized function
 ts_index <- tibble(
   
-  # Use timetk to create index
-  index = timetk::tk_make_timeseries(start_date = first_dttm, 
-                                     end_date = last_dttm, 
+  index = timetk::tk_make_timeseries(start_date = first_dttm,
+                                     end_date = last_dttm,
                                      by = "60 sec")
   ) %>% 
   
-  # Filter for times between 08:30 and 15:00
-  filter(str_sub(index, -8, -1) %>% as_hms() >= as_hms("08:30:00"),
-         str_sub(index, -8, -1) %>% as_hms() <= as_hms("15:00:00")
-         )
+  # Create date and time columns
+  mutate(index_date = as_date(index),
+         index_time = str_sub(index, -8, -1) %>% as_hms()) %>% 
+    
+    # Filter for times between 08:30 and 15:00
+    filter(index_time >= as_hms("08:30:00"),
+           index_time <= as_hms("15:00:00")) %>% 
+  
+  # Get rid of absent dates  
+  filter(index_date %in% IPC_tbl$tidy_date)
+
+# Print first 10 values
+ts_index
+
+# Print last 10 values
+ts_index %>% 
+  arrange(desc(index))
 ```
 
-Below we print the first 6 and last 6 values of our Time Series Index:
+Note that we've added two columns to our time series index: `index_date`, and `index_time`. We also removed the dates that don't match those from the original data. This gets rid of weekends, too.
+
+### Joining the Data
+
+We will make some checks further down the line, but for now, the data is ready to be **joined** into a new object, so that we have **no gaps** in between the 1-minute prices.
 
 ```{r}
-ts_index %>% head()
-ts_index %>% tail()
+joined_tbl <- ts_index %>% 
+  left_join(
+    IPC_tbl,
+    by = c("index" = "tidy_dttm")) %>% 
+  
+  # Rename the index column
+  rename("tidy_dttm" = "index") %>% 
+  
+  # Remove useless columns
+  select(-c(tidy_date, tidy_time))
 ```
+
+Below, we print the first 10 rows of this joined data. It's evident that many prices have an `NA` value, because they're not available. We'll *impute* these next.
+
+```{r}
+joined_tbl
+```
+
+### Price Imputation
 
 ### Time Series Signature
 
@@ -283,15 +318,6 @@ ts_signature <- ts_index %>%
   )
 ```
 
-Our time series signature object currently includes weekends and dates that may not be present in our data. The next step then, is to remove dates that don't match those from the data. This will also get rid of weekends, of course.
-
-```{r}
-ts_signature2 <- ts_signature %>% 
-
-  # Get rid of absent dates  
-  filter(index_date %in% IPC_tbl$tidy_date)
-```
-
 ```{r}
 # Write csv file for Time Series Signature:
 ts_signature2 %>% write_csv(here("01-Data", "ts_signature.csv"))
@@ -322,7 +348,7 @@ ts_signature2 %>%
   distinct(index_time)
 ```
 
-3.  The number of different dates in the original dataset is equal to the number of different dates in the time series signature.
+3.  The number of distinct dates in the original dataset is equal to the number of different dates in the time series signature.
 
 ```{r}
 rows_signature <- ts_signature2 %>% 
@@ -368,6 +394,8 @@ joined_IPC <- dir(directory_path, full.names = T) %>%
 ```
 
 ```{r}
+
+# Inspect why table has lots of problems
 joined_IPC %>% filter(is.na(index))
 ```
 
