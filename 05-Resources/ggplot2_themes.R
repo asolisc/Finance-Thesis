@@ -5,7 +5,7 @@ library(tidyverse)
 # --- Setup fonts ---
 library(extrafont)
 # font_import(paths = "../02-RStudio-Fonts")
-# loadfonts(device = "win")
+loadfonts(device = "win")
 
 
 # Decima Theme ------------------------------------------------------------
@@ -47,7 +47,7 @@ theme_roboto <- function(){
       plot.title.position = "plot",
       
       # Background color
-      plot.background = element_rect(fill = "#F4F3EE"),
+      # plot.background = element_rect(fill = "#F4F3EE"),
       
       # Legends
       legend.position = "top",
@@ -73,7 +73,7 @@ theme_plex <- function(){
       plot.title.position = "plot",
       
       # Background color
-      plot.background = element_rect(fill = "#F4F3EE"),
+      # plot.background = element_rect(fill = "#F4F3EE"),
       
       # Legends
       legend.position = "top",
@@ -97,7 +97,7 @@ theme_fira <- function(){
       plot.title.position = "plot",
       
       # Background color
-      plot.background = element_rect(fill = "#F4F3EE"),
+      # plot.background = element_rect(fill = "#F4F3EE"),
       
       # Legends
       legend.position = "top",
@@ -120,7 +120,7 @@ theme_overpass <- function(){
       plot.title.position = "plot",
       
       # Background color
-      plot.background = element_rect(fill = "#F4F3EE"),
+      # plot.background = element_rect(fill = "#F4F3EE"),
       
       # Legends
       legend.position = "top",
@@ -145,7 +145,7 @@ theme_opensans <- function(){
       plot.title.position = "plot",
       
       # Background color
-      plot.background = element_rect(fill = "#F4F3EE"),
+      # plot.background = element_rect(fill = "#F4F3EE"),
       
       # Legends
       legend.position = "top",
@@ -165,7 +165,9 @@ ggplot2::theme_set(
 
 # --- set colors ---
 amazing_colors <- c(
-  "#134162", "#F26F20", "#48A949", "#318FB5", "#DE4576", "#FFCD49", "#2C8697"
+  "#134162", "#F26F20", "#48A949", "#318FB5", 
+  "#DE4576", "#FFCD49", "#2C8697", 
+  "#13364C", "#ABDDE3", "#318B71"
   # "#D14D38", "#4C91B7"
   # "#47802B", "#E23E57", "#532647",
   # "#2F4C58", "#63A583", "#6E93D6",
