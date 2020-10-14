@@ -126,9 +126,6 @@ The modified data is stored into the `IPC_tbl` (*IPC tibble*) object.
 ```{r}
 IPC_tbl <- IPC_ip %>% 
   
-  # Convert to tibble
-  as_tibble() %>%
-  
   # Create time variables: tidy_date, tidy_time, tidy_dttm
   mutate(tidy_date = lubridate::ymd(raw_date),
          tidy_time = hms::as_hms(raw_time)
@@ -146,6 +143,98 @@ IPC_tbl <- IPC_ip %>%
 # Remove the older df
 rm(IPC_ip)
 ```
+
+## 2.1 Narrowing down the time window for prices
+
+First, it's useful to see how many different trading-days we have in our data.
+
+```{r}
+IPC_tbl %>% 
+  distinct(tidy_date) %>% nrow()
+```
+
+So we have `5,613` different trading-days.
+
+It's worth noting that, for the `tidy_time` variable, we have data from `05:32:00` all the way through `20:22:00`.
+
+Let's see the earliest times in our data:
+
+```{r}
+IPC_tbl %>% 
+  select(tidy_time) %>% 
+  unique() %>% 
+  arrange(tidy_time)
+```
+
+And the latest times in our data:
+
+```{r}
+IPC_tbl %>% 
+  select(tidy_time) %>% 
+  unique() %>% 
+  arrange(desc(tidy_time))
+```
+
+We can also visualize how many datapoints we have, per hour.
+
+```{r, layout="l-body-outset", fig.width=8, fig.asp=0.618}
+IPC_tbl %>% 
+  mutate(tidy_hour = as.factor(hour(tidy_time))) %>% 
+  count(tidy_hour, sort = T, name = "trades_per_hour") %>% 
+  # mutate(tidy_hour = fct_reorder(tidy_hour, .x = trades_per_hour, .desc = T)) %>%
+  ggplot(aes(tidy_hour, trades_per_hour)) +
+  geom_col(fill = amazing_colors[1]) +
+  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+  labs(
+    title = "No. Prices per Hour in the Sample",
+    x = "Hour",
+    y = NULL
+  )
+```
+
+From the plot above, we see that most of the prices lie between 8:00AM - 3:00PM. It's interesting that the hours `8` and `15` have fewer datapoints. We can further inspect each one to see the hour-minute components of those trades.
+
+```{r, layout="l-body-outset", fig.width=8, fig.asp=0.618}
+IPC_tbl %>% 
+  mutate(tidy_hour = as.factor(hour(tidy_time)),
+         tidy_minute = minute(tidy_time)) %>%
+  filter(tidy_hour == 8) %>% 
+  count(tidy_minute, sort = T, name = "trades_per_minute") %>% 
+  ggplot(aes(tidy_minute, trades_per_minute)) +
+  geom_col(fill = amazing_colors[8]) +
+  scale_x_continuous(breaks = seq(0, 60, 5)) +
+  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+  labs(
+    title = "Number of Trades per Minute from 8:00AM-8:59AM",
+    x = "Minute",
+    y = NULL
+  )
+```
+
+As expected, the second half-hour is the most active (that is, the period from 8:30AM - 8:59AM).
+
+Now, let's do the same for the `15` hour-mark:
+
+```{r, layout="l-body-outset", fig.width=8, fig.asp=0.618}
+IPC_tbl %>% 
+  mutate(tidy_hour = as.factor(hour(tidy_time)),
+         tidy_minute = minute(tidy_time)) %>%
+  filter(tidy_hour == 15) %>% 
+  count(tidy_minute, sort = T, name = "trades_per_minute") %>% 
+  ggplot(aes(tidy_minute, trades_per_minute)) +
+  geom_col(fill = amazing_colors[8]) +
+  scale_x_continuous(breaks = seq(0, 60, 5)) +
+  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+    labs(
+    title = "Number of Trades per Minute from 3:00PM-3:59PM",
+    x = "Minute",
+    y = NULL
+  )
+```
+
+Here, the time with most trades is 3:00PM exactly. That's what we need because we'll ignore the rest of the trades. Following *Liu, Patton, Sheppard (2013)*, we'll discard any prices that were quoted outside normal business hours. Hence, we want prices that lie between `08:30` and `15:00`.
+
+To achieve this, we'll introduce the concept of a *time series index*.
 
 ### Time Series Index
 
@@ -220,11 +309,12 @@ ts_index <- tibble(
   
   # Create date and time columns
   mutate(index_date = as_date(index),
-         index_time = hms(
-           seconds = second(index),
-           minutes = minute(index),
-           hours = hour(index)
-         )) %>% 
+         
+         index_time = hms(seconds = second(index),
+                          minutes = minute(index),
+                          hours = hour(index)
+                          )
+         ) %>% 
   
   # Filter for times between 08:30 and 15:00
   filter(index_time >= as_hms("08:30:00"),
@@ -253,9 +343,6 @@ joined_tbl <- ts_index %>%
     IPC_tbl,
     by = c("index" = "tidy_dttm")) %>% 
   
-  # Rename the index column
-  rename("tidy_dttm" = "index") %>% 
-  
   # Remove useless columns
   select(-c(tidy_date, tidy_time))
 ```
@@ -266,11 +353,49 @@ Below, we print the first 10 rows of this joined data. It's evident that many pr
 joined_tbl
 ```
 
-### Price Imputation
+## 2.2 Price Imputation
 
-### Time Series Signature
+Except for the first 6 datapoints, we will impute the prices by looking at the last available price. But first, we do impute those 6 datapoints:
 
-We can then extract several time-related variables from this time series index. In this case, we'll get *20 different time-related variables*. We'll call this **The Time Series Signature**, which is a collection of time-related variables that will help for feature engineering and modeling. The most important ones are:
+```{r}
+joined_tbl$last_price[1:6] <- joined_tbl$last_price[7]
+
+joined_tbl
+```
+
+Now the `last_price` column has values for the 6 first minutes. Next, we impute the rest of the prices. We check that the `last_price` column has no missing values next.
+
+```{r}
+full_IPC <- joined_tbl %>% 
+  fill(last_price)
+  
+full_IPC %>% map_df(.f = ~ sum(is.na(.)))
+```
+
+As we can see, only the `volume` and `no_trades` (number of trades) have missing values now.
+
+Another check we can do is to count the number of prices per unique date. We can do this by just counting the frequency of each date. It must have a frequency of 391, since we have:
+
+\\begin{equation} \text{prices/day} = \text{hours} \times \\text{minutes} + 1 = (6.5) \times 60 + 1 = 391 \\end{equation}
+
+```{r}
+full_IPC %>% 
+  count(index_date, name = "date_count")
+```
+
+Printing the first 10 counts for each date... this looks correct. But now, let's get the unique values from that `date_count` column just to be sure:
+
+```{r}
+full_IPC %>% 
+  count(index_date, name = "date_count") %>% 
+  distinct(date_count)
+```
+
+The time series has been successfully padded.
+
+## 2.3 Time Series Signature
+
+We can then extract several time-related variables from the time series index. In this case, we'll get *20 different time-related variables*. We'll call this **The Time Series Signature**, which is a collection of time-related variables that will help for feature engineering and modeling. The most important ones are:
 
 -   `index`: The time-index variable that is being decomposed.
 -   `index_date`: The date component of the `index` variable.
@@ -295,26 +420,24 @@ We can then extract several time-related variables from this time series index. 
 -   `date_change`: A *boolean* variable. `TRUE` indicates that the date has changed against the previous index value. `FALSE` indicates no change.
 
 ```{r}
-ts_signature <- ts_index %>% 
+IPC_signature <- full_IPC %>% 
   
   # Create time series signature
   mutate(
-    index_date  = as_date(index),
-    index_time  = str_sub(index, -8, -1) %>% as_hms(),
-    # index_num   = as.numeric(index),
-    diff        = as.numeric(index) - lag(as.numeric(index)),
+    index_num   = as.numeric(index),
+    diff        = index_num - lag(index_num),
     year        = year(index),
-    # half        = semester(index, with_year = FALSE),
-    # quarter     = quarter(index),
+    half        = semester(index, with_year = FALSE),
+    quarter     = quarter(index),
     month       = month(index),
-    # month_label = month(index, label = TRUE),
+    month_label = month(index, label = TRUE),
     day         = day(index),
     hour        = hour(index),
     minute      = minute(index),
-    # wday        = wday(index, week_start = 1),
+    wday        = wday(index, week_start = 1),
     wday_label  = wday(index, label = TRUE),
-    # qday        = qday(index),
-    # yday        = yday(index),
+    qday        = qday(index),
+    yday        = yday(index),
     # mweek       =
     # week        = lubridate::week(),
     # mday7       = day %% 7,
@@ -322,20 +445,12 @@ ts_signature <- ts_index %>%
   )
 ```
 
-```{r}
-# Write csv file for Time Series Signature:
-ts_signature2 %>% write_csv(here("01-Data", "ts_signature.csv"))
-
-# Write csv file for IPC:
-IPC_tbl %>% write_csv(here("01-Data", "IPC_csv.csv"))
-```
-
 Lastly, we do a quick check for:
 
 1.  The time series signature doesn't contain weekend days. We do this by printing the unique values for the weekday label stored in the `wday_label` variable.
 
 ```{r}
-ts_signature2 %>% 
+IPC_signature %>% 
   distinct(wday_label)
 ```
 
@@ -343,244 +458,33 @@ ts_signature2 %>%
 
 ```{r}
 # First 10 unique values
-ts_signature2 %>% 
+IPC_signature %>% 
   distinct(index_time)
 
 # Last 10 unique values
-ts_signature2 %>% 
+IPC_signature %>% 
   arrange(-index_time) %>% 
   distinct(index_time)
 ```
 
-3.  The number of distinct dates in the original dataset is equal to the number of different dates in the time series signature.
-
-```{r}
-rows_signature <- ts_signature2 %>% 
-  distinct(index_date) %>% 
-  nrow()
-
-rows_prices <- IPC_tbl %>% 
-  distinct(tidy_date) %>% 
-  nrow()
-
-paste('The difference in unique dates from the datasets is:', 
-      abs(rows_signature - rows_prices))
-```
-
-### Augmenting the Time Series
-
-Next, we add the time series signature to our original data.
-
-Note: this task had to be done in a distributed computing environment with help of the `sparklyr` library, owing to the sheer amount of RAM memory the `join` operations needed.
-
-```{r}
-source(here("spark_code.R"))
-```
-
-```{r}
-directory_path <- here("01-Data", "joined.csv")
-
-# Get each file's full path
-joined_IPC <- dir(directory_path, full.names = T) %>%
-  map_df(read_csv) %>% 
-  
-  # Turn into tibble
-  as_tibble() %>%
-  
-  # Re-parse index_date correctly
-  mutate(index_date = as_date(index)) %>% 
-  
-  # Remove duplicate dttm column
-  select(-c(tidy_dttm)) %>% 
-  
-  relocate(last_price, .after = 1)
-
-```
-
-```{r}
-
-# Inspect why table has lots of problems
-joined_IPC %>% filter(is.na(index))
-```
-
-```{r}
-IPC_tbl <- 
-  
-  IPC_tbl %>%
-  
-  # Create the time-related variables
-  mutate(
-    tidy_year   = lubridate::year(tidy_date),
-    tidy_month  = lubridate::month(tidy_date),
-    tidy_mday   = lubridate::mday(tidy_date),
-    tidy_wday   = lubridate::wday(tidy_date, label = T, locale = "English"),
-    tidy_hour   = lubridate::hour(tidy_time),
-    tidy_minute = lubridate::minute(tidy_time),
-    
-    # Variables to keep track of time jumps
-    date_num    = as.numeric(tidy_dttm),
-    diff        = date_num - lag(date_num)
-  ) %>%
-  
-  # Create the trade_id variable
-  mutate(trade_id = seq(1:nrow(IPC))) %>%
-  
-  # Rearrange the order of the columns:
-  select(trade_id, tidy_dttm, diff, tidy_date, tidy_time, dplyr::everything())
-
-
-# Finally take a thorough look at the data:
-# IPC_tbl %>% skimr::skim()
-```
-
-## Padding the Time Series
-
-Next, we need to pad the time series to fill in the gaps. We will use the **nearest past price** to fill the data for a 1-minute grid. The only exception are the first six prices (which are missing), where we will use the **nearest future price**.
-
-## 2.1 Computing Intraday Log-Returns
+## 2.4 Computing Intraday Log-Returns
 
 Next, we compute the intraday returns and assign them to the `log_ret` variable. We also convert our data into a time-friendly type of object called `tibble time` (we do this via the `as_tbl_time()` function).
 
 ```{r}
-(IPC_ret_tbl <-
-  IPC_tbl %>%
-  dplyr::mutate(log_ret = log(last_price) - lag(log(last_price))) %>%
+returns_tbl <- IPC_signature %>%
+  mutate(log_ret = log(last_price) - lag(log(last_price)))
    
-  # The following lines filter out the returns with NA:
-  # dplyr::filter(!is.na(log_ret)) %>%
-  # na.omit() %>%
-  
-  # The following line filters out the rows with zero returns:
-  # dplyr::filter(log_ret != 0) %>%
-  
-  # Rearrange the order of the columns:
-  dplyr::select(trade_id, tidy_date, log_ret, dplyr::everything()) %>%
-  
-  # Convert to tibbletime
-  tibbletime::as_tbl_time(index = tidy_date))
 
 # Remove the older df
-# rm(IPC_tbl)
+rm(full_IPC)
+rm(IPC_signature)
+rm(ts_index)
+rm(joined_tbl)
+rm(IPC_tbl)
 ```
 
-## 2.2 Narrowing down the time window for trades
-
-First, it's useful to see how many different trading-days we have in our data.
-
-```{r}
-IPC_ret_tbl %>% 
-  distinct(tidy_date) %>% nrow()
-```
-
-So we have `5,613` different trading- days.
-
-It's worth noting that, for the `tidy_time` variable, we have data from `05:32:00` all the way through `20:22:00`.
-
-Let's see the earliest times in our data:
-
-```{r}
-IPC_ret_tbl %>% select(tidy_time) %>% unique() %>% arrange(tidy_time) %>% head()
-```
-
-And the latest times in our data:
-
-```{r}
-IPC_ret_tbl %>% select(tidy_time) %>% unique() %>% arrange(tidy_time) %>% tail()
-```
-
-We can also visualize how many datapoints we have, per hour.
-
-```{r, layout="l-body-outset", fig.width=8, fig.asp=0.618}
-IPC_ret_tbl %>% mutate(tidy_hour = as.factor(tidy_hour)) %>% 
-  count(tidy_hour, sort = T, name = "trades_per_hour") %>% 
-  # mutate(tidy_hour = fct_reorder(tidy_hour, .x = trades_per_hour, .desc = T)) %>%
-  ggplot(aes(tidy_hour, trades_per_hour)) +
-  geom_col(fill = amazing_colors[1]) +
-  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
-  labs(
-    title = "No. Prices per Hour in the Sample",
-    x = "Hour",
-    y = NULL
-  )
-```
-
-From the plot above, we see that most of the prices lie between 8:00AM - 3:00PM. It's interesting that the hours `8` and `15` have fewer datapoints. We can further inspect each one to see the hour-minute components of those trades.
-
-```{r, layout="l-body-outset", fig.width=8, fig.asp=0.618}
-IPC_ret_tbl %>% 
-  filter(tidy_hour == 8) %>% 
-  count(tidy_minute, sort = T, name = "trades_per_minute") %>% 
-  ggplot(aes(tidy_minute, trades_per_minute)) +
-  geom_col(fill = amazing_colors[2]) +
-  scale_x_continuous(breaks = seq(0, 60, 5)) +
-  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
-  labs(
-    title = "Number of Trades per Minute from 8:00AM-8:59AM",
-    x = "Minute",
-    y = NULL
-  )
-```
-
-As expected, the second half-hour is the most active (that is, the period from 8:30AM - 8:59AM).
-
-Now, let's do the same for the `15` hour-mark:
-
-```{r, layout="l-body-outset", fig.width=8, fig.asp=0.618}
-IPC_ret_tbl %>% 
-  filter(tidy_hour == 15) %>% 
-  count(tidy_minute, sort = T, name = "trades_per_minute") %>% 
-  ggplot(aes(tidy_minute, trades_per_minute)) +
-  geom_col(fill = amazing_colors[3]) +
-  scale_x_continuous(breaks = seq(0, 60, 5)) +
-  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
-    labs(
-    title = "Number of Trades per Minute from 3:00PM-3:59PM",
-    x = "Minute",
-    y = NULL
-  )
-```
-
-Here, the time with most trades is 3:00PM exactly. That's what we need because we'll ignore the rest of the trades. Following Liu, Patton, Sheppard (2013), we'll discard any prices that were quoted outside normal business hours. Hence, we want trades that lie between `08:30` and `15:00`. We'll store these trades in a new object called `IPC_tfr_tbl` (IPC time-filtered returns tibble). Finally, we'll print the earliest and latest times in our data to check.
-
-```{r}
-left_limit <- hms(seconds = 0,
-                  minutes = 30,
-                  hours = 8)
-
-right_limit <- hms(seconds = 0,
-                   minutes = 0,
-                   hours = 15)
-
-IPC_tfr_tbl <- IPC_ret_tbl %>%
-  filter(tidy_time >= left_limit & tidy_time <= right_limit)
-
-IPC_tfr_tbl
-# Remove old df
-# rm(IPC_ret_tbl)
-```
-
-```{r}
-IPC_tfr_tbl %>% select(tidy_time) %>% unique() %>% dplyr::arrange(tidy_time) %>% head()
-IPC_tfr_tbl %>% select(tidy_time) %>% unique() %>% dplyr::arrange(tidy_time) %>% tail()
-```
-
-We have filtered out `r nrow(IPC_ret_tbl) - nrow(IPC_tfr_tbl)` datapoints.
-
-One last check we need to do regarding this point is the amount of different days that we just filtered. To start, let's see all unique dates before narrowing the time window:
-
-```{r}
-IPC_ret_tbl %>% group_by(tidy_date) %>% dplyr::count() %>% nrow()
-```
-
-Now let's check for all unique dates after narrowing the time window:
-
-```{r}
-IPC_tfr_tbl %>% group_by(tidy_date) %>% dplyr::count() %>% nrow()
-```
-
-Thus, we see that we have lost `r IPC_ret_tbl %>% group_by(tidy_date) %>% dplyr::count() %>% nrow() - IPC_tfr_tbl %>% group_by(tidy_date) %>% dplyr::count() %>% nrow()` days of data. For purposes of this analysis, we deem that to be valid.
-
-## 2.3 Setting Overnight Returns to Zero
+## 2.5 Setting Overnight Returns to Zero
 
 Another aspect that we want to take into account is: the fact that the overnight return should not be taken into account. Therefore, we set the first log-return of each day to zero. Once again, we store these values in a new object called `IPC_oar_tbl` (which stands for IPC overnight adjusted returns tibble).
 
@@ -639,7 +543,7 @@ IPC_oar_tbl %>% select(tidy_date) %>% unique() %>% nrow()
 
 Thus, we see that this holds true. We have correctly set the overnight returns to zero.
 
-## 2.4 Removing Outliers
+## 2.6 Removing Outliers
 
 We want to filter out log-returns whose absolute value is greater than some threshold. We'll do this again later for 5-minute returns and 30-minute returns. We define the threshold such that we are filtering keeping \~ 99% of the original data. Log-returns that are outside of the defined threshold are immediately set to zero.
 
@@ -659,103 +563,6 @@ IPC_fr <- IPC_oar_tbl %>%
 ```
 
 In this case we've set the variable `threshold` to the value (`0.0012`) such that we're filtering out \~ 1% of the data. We store the filtered data in the `IPC_fr` tibble (which stands for IPC filtered returns).
-
-## 2.5 Padding the Time Series
-
-Now, after all the data wrangling that we did, we still don't have a perfect time series, because it has some "holes" in it. We can check this by plotting, again, the number of log-returns we have per hour:
-
-```{r, layout="l-body-outset", fig.width=8, fig.asp=0.618}
-IPC_fr %>% mutate(tidy_hour = as.factor(tidy_hour)) %>% 
-  count(tidy_hour, sort = T, name = "trades_per_hour") %>% 
-  # mutate(tidy_hour = fct_reorder(tidy_hour, .x = trades_per_hour, .desc = T)) %>%
-  ggplot(aes(tidy_hour, trades_per_hour)) +
-  geom_col(fill = amazing_colors[1]) +
-  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
-  labs(
-    title = "No. Trades per Hour in the Sample",
-    x = "Hour",
-    y = NULL
-  )
-```
-
-Most of the hours (9 - 14) have almost complete data. The hour number 8 has almost half the data points but that's natural since we only have half an hour there. However, almost all of the log-returns for the `15:00` mark seem to be missing. In normal business hours, we have 6 hours and a half of market trading. If we have one-minute trades, that means we should have $6.5 * 60 + 1 = 391$ trades/day. The `+1` in the equation comes from including the log-returns at exactly `15:00` hours.
-
-```{r, echo = FALSE}
-# timetk::tk_make_timeseries(start_date = "2020-09-11 08:30:00", by = "1 min", length_out = 391) %>% head()
-```
-
-Therefore, we'll pad the time series with the mean log-return for each half-hour.
-
-```{r, eval = FALSE}
-IPC_padded <-
-  IPC_fr %>%
-  
-  # Create the half-hour variable
-  mutate(
-    tidy_half_hour = case_when(
-      tidy_hour == 8 ~ 1,
-      tidy_hour == 9 & tidy_minute < 30 ~ 2,
-      tidy_hour == 9 & tidy_minute >= 30 ~ 3,
-      tidy_hour == 10 & tidy_minute < 30 ~ 4,
-      tidy_hour == 10 & tidy_minute >= 30 ~ 5,
-      tidy_hour == 11 & tidy_minute < 30 ~ 6,
-      tidy_hour == 11 & tidy_minute >= 30 ~ 7,
-      tidy_hour == 12 & tidy_minute < 30 ~ 8,
-      tidy_hour == 12 & tidy_minute >= 30 ~ 9,
-      tidy_hour == 13 & tidy_minute < 30 ~ 10,
-      tidy_hour == 13 & tidy_minute >= 30 ~ 11,
-      tidy_hour == 14 & tidy_minute < 30 ~ 12,
-      tidy_hour == 14 & tidy_minute >= 30 ~ 12,
-      TRUE ~ 13
-    )
-  ) %>%
-  
-  # Create the tidy_dttm variable for padding
-  mutate(tidy_dttm = lubridate::as_datetime(str_c(tidy_date, " ", tidy_time))) %>%
-  
-  # Pad the time series, starting from 1996-01-02 08:30:00
-  timetk::pad_by_time(
-    .date_var = "tidy_dttm",
-    .by = "1 min",
-    .start_date = as_datetime('1996-01-02 08:30:00'),
-    .end_date = as_datetime('2018-06-05 15:00:00')
-  )
-```
-
-```{r, eval = FALSE}
-IPC_padded %>% dplyr::relocate(tidy_dttm, everything())
-```
-
-```{r, eval = FALSE}
-IPC_padded_tbl <- 
-  
-  IPC_padded %>%
-  
-  # Filter out trades that are out of normal business hours
-  # filter(tidy_time >= left_limit & tidy_time <= right_limit) %>% 
-
-  # Create the time-related variables
-  mutate(
-    raw_time    = as_hms(tidy_dttm),
-    tidy_date   = lubridate::ymd(str_sub(tidy_dttm, 1, 10)),
-    tidy_year   = lubridate::year(tidy_date),
-    tidy_month  = lubridate::month(tidy_date),
-    tidy_mday   = lubridate::mday(tidy_date),
-    tidy_wday   = lubridate::wday(tidy_date, label = T, locale = "English"),
-    tidy_hour   = lubridate::hour(raw_time),
-    tidy_minute = lubridate::minute(raw_time),
-    tidy_time   = hms::as_hms(raw_time)
-  ) %>%
-  
-  # Create the trade_id variable
-  mutate(trade_id = seq(1:nrow(IPC_padded))) %>%
-  
-  # Drop the tidy_dttm variable
-  select(-c(tidy_dttm, raw_time)) %>% 
-  
-  # Rearrange the order of the columns
-  select(trade_id, tidy_date, tidy_time, log_ret, dplyr::everything())
-```
 
 # IPC and Volatility Indices -- Daily Data
 
