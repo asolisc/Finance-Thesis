@@ -195,12 +195,12 @@ These values are incorrect; the first value in our time-series should be `1996-0
 
 ```{r}
 first_dttm <- left_edge %>% 
-  str_sub(1, 10) %>% 
+  as_date() %>% 
   paste("08:30:00") %>% 
   as_datetime()
 
 last_dttm <- right_edge %>% 
-  str_sub(1, 10) %>% 
+  as_date() %>% 
   paste("15:00:00") %>% 
   as_datetime()
 ```
@@ -216,15 +216,19 @@ ts_index <- tibble(
   index = timetk::tk_make_timeseries(start_date = first_dttm,
                                      end_date = last_dttm,
                                      by = "60 sec")
-  ) %>% 
+) %>% 
   
   # Create date and time columns
   mutate(index_date = as_date(index),
-         index_time = str_sub(index, -8, -1) %>% as_hms()) %>% 
-    
-    # Filter for times between 08:30 and 15:00
-    filter(index_time >= as_hms("08:30:00"),
-           index_time <= as_hms("15:00:00")) %>% 
+         index_time = hms(
+           seconds = second(index),
+           minutes = minute(index),
+           hours = hour(index)
+         )) %>% 
+  
+  # Filter for times between 08:30 and 15:00
+  filter(index_time >= as_hms("08:30:00"),
+         index_time <= as_hms("15:00:00")) %>% 
   
   # Get rid of absent dates  
   filter(index_date %in% IPC_tbl$tidy_date)
