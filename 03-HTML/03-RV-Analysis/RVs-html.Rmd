@@ -45,18 +45,16 @@ library(skimr)
 # Time Series
 library(timetk)
 library(tidyquant)
-library(tibbletime)
-library(tsibble)
-library(hms)
-library(modeltime)
-library(tidymodels)
+# library(hms)
+# library(modeltime)
+# library(tidymodels)
 
 # Visualization
-library(ggthemes)
+# library(ggthemes)
 library(scales)
-library(ghibli)
+# library(ghibli)
 library(cowplot)
-library(plotly)
+# library(plotly)
 library(gt)
 
 # Reproducibility
@@ -65,8 +63,8 @@ library(here)
 
 
 # Speed
-library(data.table)
-library(dtplyr)
+# library(data.table)
+# library(dtplyr)
 library(arrow)
 
 
@@ -76,49 +74,30 @@ source(here("05-Resources", "ggplot2_themes.R"))
 
 ```{r}
 # Read the data
-IPC_fr <- read_parquet(file = here("01-Data", "parquet", "IPC_fr.parquet"))
-```
-
-Problems with the data:
-
-1.  We don't have the same number of datapoints (trades) per day.
-
-```{r}
-IPC_fr %>%
-  count(tidy_date) %>% 
-  arrange(n)
-  # ggplot(aes(x = tidy_date, y = n)) +
-  # geom_col() +
-  # theme_roboto()
-```
-
-2.  We don't have the same number of datapoints (trades) per time (i.e. hour:minute).
-
-```{r}
-IPC_fr %>% count(tidy_time) %>% 
-  arrange(n)
-#   ggplot(aes(x = tidy_time, y = n)) +
-#   geom_col() +
-#   theme_roboto()
+IPC_fr <- read_parquet(file = here("01-Data", "parquet", "IPC_fr2.parquet"))
 ```
 
 # Realized Variance
 
-For this section, we'll transform our dataset into a `timetibble` object, so that time filtering and wrangling of the data is easier. We'll call the new dataset `IPC_tbl_tm` (IPC tibble time).
+For this section, we'll transform our dataset into a `timetibble` object, so that time filtering and wrangling of the data is easier. We'll call the new dataset `IPC_fr` (IPC tibble time).
 
 ```{r}
-IPC_tbl_tm <- IPC_fr %>%  
-  tibbletime::as_tbl_time(index = tidy_date)
+# IPC_fr <- IPC_fr %>%  
+  # tibbletime::as_tbl_time(index = index_date)
 
-IPC_tbl_tm
+# IPC_fr
+```
+
+```{r}
+IPC_fr %>% View()
 ```
 
 We can now compute the realized variance for each day:
 
 ```{r}
-RVs <- IPC_tbl_tm %>% 
+RVs <- IPC_fr %>% 
   mutate(log_ret_sq = log_ret^2) %>% 
-  group_by(tidy_date) %>% 
+  group_by(index_date) %>% 
   summarise(RV = sum(log_ret_sq),
             RV_an = 252 * sqrt(RV)) %>% 
   
@@ -133,9 +112,8 @@ Now let's plot the RVs:
 ```{r, layout="l-body-outset", fig.width=8, fig.asp=0.618}
 rv_plot <- RVs %>% 
   # filter_time("1996" ~ "end") %>%
-  ggplot(mapping = aes(x = tidy_date, y = RV_an)) +
+  ggplot(mapping = aes(x = index_date, y = RV_an)) +
   geom_point(color = amazing_colors[1], alpha = 0.5) +
-  # geom_smooth(method = "loess") +
   labs(
     title = "Intraday Volatility for the S&P/BMV IPC Index",
     subtitle = "As measured by the annualized daily-realized-variance",
@@ -168,20 +146,6 @@ An *RV Sparse* estimator consists of calculating the realized variance but with 
 Here, we will use different combinations of $s$ such as `s = 5`, `s = 10`, `s = 15`, and `s = 30`. In order to sample in an *s*-minute grid, we make use of the following auxiliary rolling-functions:
 
 ```{r}
-# # For a 5-minute grid:
-# five_rolling_sum <- rollify(.f = ~sum(.x), window = 5)
-# 
-# # For a 10-minute grid:
-# ten_rolling_sum <- rollify(.f = ~sum(.x), window = 10)
-# 
-# # For a 15-minute grid:
-# fifteen_rolling_sum <- rollify(.f = ~sum(.x), window = 15)
-# 
-# # For a 30-minute grid:
-# thirty_rolling_sum <- rollify(.f = ~sum(.x), window = 30)
-```
-
-```{r}
 # For a 5-minute grid:
 five_roll_sum <- slidify(
   .f = ~sum(.x), 
@@ -202,7 +166,6 @@ fifteen_roll_sum <- slidify(
   .align = "right")
 
 
-
 # For a 30-minute grid:
 thirty_roll_sum <- slidify(
   .f = ~sum(.x), 
@@ -213,17 +176,17 @@ thirty_roll_sum <- slidify(
 We can now subset the data to a five-minute grid. We'll call this new data `IPC_5m`.
 
 ```{r}
-IPC_5m <- IPC_tbl_tm %>% 
+IPC_5m <- IPC_fr %>% 
   mutate(ret_5m = five_roll_sum(log_ret)) %>% 
-  select(tidy_date, tidy_time, ret_5m) %>%
+  select(index_date, index_time, ret_5m) %>%
   filter(!is.na(ret_5m)) %>% 
-  slice(seq(1, nrow(IPC_tbl_tm), by = 5))
+  slice(seq(1, nrow(IPC_fr), by = 5))
 ```
 
 ```{r}
 RV_s5 <- IPC_5m %>% 
   mutate(log_ret_sq = ret_5m^2) %>% 
-  group_by(tidy_date) %>% 
+  group_by(index_date) %>% 
   summarise(RVs5 = sum(log_ret_sq),
             RVs5_an = 252 * sqrt(RVs5))
 ```
@@ -231,17 +194,17 @@ RV_s5 <- IPC_5m %>%
 Now we repeat the process for a $s = 10$ grid:
 
 ```{r}
-IPC_10m <- IPC_tbl_tm %>%
+IPC_10m <- IPC_fr %>%
   mutate(ret_10m = ten_roll_sum(log_ret)) %>% 
-  select(tidy_date, tidy_time, ret_10m) %>%
+  select(index_date, index_time, ret_10m) %>%
   filter(!is.na(ret_10m)) %>% 
-  slice(seq(1, nrow(IPC_tbl_tm), by = 10))
+  slice(seq(1, nrow(IPC_fr), by = 10))
 ```
 
 ```{r}
 RV_s10 <- IPC_10m %>% 
   mutate(log_ret_sq = ret_10m^2) %>% 
-  group_by(tidy_date) %>% 
+  group_by(index_date) %>% 
   summarise(RVs10 = sum(log_ret_sq),
             RVs10_an = 252 * sqrt(RVs10))
 ```
@@ -249,17 +212,17 @@ RV_s10 <- IPC_10m %>%
 And then again, for the $s = 15$ grid:
 
 ```{r}
-IPC_15m <- IPC_tbl_tm %>% 
+IPC_15m <- IPC_fr %>% 
   mutate(ret_15m = fifteen_roll_sum(log_ret)) %>% 
-  select(tidy_date, tidy_time, ret_15m) %>%
+  select(index_date, index_time, ret_15m) %>%
   filter(!is.na(ret_15m)) %>% 
-  slice(seq(1, nrow(IPC_tbl_tm), by = 15))
+  slice(seq(1, nrow(IPC_fr), by = 15))
 ```
 
 ```{r}
 RV_s15 <- IPC_15m %>% 
   mutate(log_ret_sq = ret_15m^2) %>% 
-  group_by(tidy_date) %>% 
+  group_by(index_date) %>% 
   summarise(RVs15 = sum(log_ret_sq),
             RVs15_an = 252 * sqrt(RVs15))
 ```
@@ -267,17 +230,17 @@ RV_s15 <- IPC_15m %>%
 And lastly, for the $s = 30$ grid:
 
 ```{r}
-IPC_30m <- IPC_tbl_tm %>% 
+IPC_30m <- IPC_fr %>% 
   mutate(ret_30m = thirty_roll_sum(log_ret)) %>% 
-  select(tidy_date, tidy_time, ret_30m) %>%
+  select(index_date, index_time, ret_30m) %>%
   filter(!is.na(ret_30m)) %>% 
-  slice(seq(1, nrow(IPC_tbl_tm), by = 30))
+  slice(seq(1, nrow(IPC_fr), by = 30))
 ```
 
 ```{r}
 RV_s30 <- IPC_30m %>% 
   mutate(log_ret_sq = ret_30m^2) %>% 
-  group_by(tidy_date) %>% 
+  group_by(index_date) %>% 
   summarise(RVs30 = sum(log_ret_sq),
             RVs30_an = 252 * sqrt(RVs30))
 ```
@@ -296,10 +259,10 @@ This is where volatility signature plots (VSP) will help; these are a graphical 
 
 ```{r}
 all_RV_sparse <- RVs %>% 
-  left_join(y = RV_s5, by = "tidy_date") %>% 
-  left_join(y = RV_s10, by = "tidy_date") %>% 
-  left_join(y = RV_s15, by = "tidy_date") %>% 
-  left_join(y = RV_s30, by = "tidy_date")
+  left_join(y = RV_s5, by = "index_date") %>% 
+  left_join(y = RV_s10, by = "index_date") %>% 
+  left_join(y = RV_s15, by = "index_date") %>% 
+  left_join(y = RV_s30, by = "index_date")
 
 all_RV_sparse
 ```
@@ -340,9 +303,9 @@ We can also sample with an *s*-minute grid, but every *k* minutes. Here, we empl
 5-minute grid every 1-minute:
 
 ```{r}
-IPC_5m_1m <- IPC_tbl_tm %>% 
+IPC_5m_1m <- IPC_fr %>% 
   mutate(ret_5m = five_roll_sum(log_ret)) %>% 
-  select(tidy_date, tidy_time, ret_5m) %>%
+  select(index_date, index_time, ret_5m) %>%
   filter(!is.na(ret_5m))
 
 
@@ -352,9 +315,9 @@ IPC_5m_1m
 10-minute grid every 1-minute:
 
 ```{r}
-IPC_10m_1m <- IPC_tbl_tm %>% 
+IPC_10m_1m <- IPC_fr %>% 
   mutate(ret_10m = ten_roll_sum(log_ret)) %>% 
-  select(tidy_date, tidy_time, ret_10m) %>%
+  select(index_date, index_time, ret_10m) %>%
   filter(!is.na(ret_10m))
 
 IPC_10m_1m
@@ -363,11 +326,11 @@ IPC_10m_1m
 10-minute grid every 2-minutes:
 
 ```{r}
-IPC_10m_2m <- IPC_tbl_tm %>% 
+IPC_10m_2m <- IPC_fr %>% 
   mutate(ret_10m = ten_roll_sum(log_ret)) %>% 
-  select(tidy_date, tidy_time, ret_10m) %>%
+  select(index_date, index_time, ret_10m) %>%
   filter(!is.na(ret_10m)) %>% 
-  slice(seq(1, nrow(IPC_tbl_tm), by = 2))
+  slice(seq(1, nrow(IPC_fr), by = 2))
 
 IPC_10m_2m
 ```
@@ -375,9 +338,9 @@ IPC_10m_2m
 15-minute grid every 1-minute:
 
 ```{r}
-IPC_15m_1m <- IPC_tbl_tm %>% 
+IPC_15m_1m <- IPC_fr %>% 
   mutate(ret_15m = fifteen_roll_sum(log_ret)) %>% 
-  select(tidy_date, tidy_time, ret_15m) %>%
+  select(index_date, index_time, ret_15m) %>%
   filter(!is.na(ret_15m))
 
 IPC_15m_1m
@@ -386,11 +349,11 @@ IPC_15m_1m
 15-minute grid every 3-minutes:
 
 ```{r}
-IPC_15m_3m <- IPC_tbl_tm %>% 
+IPC_15m_3m <- IPC_fr %>% 
   mutate(ret_15m = fifteen_roll_sum(log_ret)) %>% 
-  select(tidy_date, tidy_time, ret_15m) %>%
+  select(index_date, index_time, ret_15m) %>%
   filter(!is.na(ret_15m)) %>% 
-  slice(seq(1, nrow(IPC_tbl_tm), by = 3))
+  slice(seq(1, nrow(IPC_fr), by = 3))
 
 IPC_15m_3m
 ```
@@ -398,11 +361,11 @@ IPC_15m_3m
 15-minute grid every 5-minutes:
 
 ```{r}
-IPC_15m_5m <- IPC_tbl_tm %>% 
+IPC_15m_5m <- IPC_fr %>% 
   mutate(ret_15m = fifteen_roll_sum(log_ret)) %>% 
-  select(tidy_date, tidy_time, ret_15m) %>%
+  select(index_date, index_time, ret_15m) %>%
   filter(!is.na(ret_15m)) %>% 
-  slice(seq(1, nrow(IPC_tbl_tm), by = 5))
+  slice(seq(1, nrow(IPC_fr), by = 5))
 
 IPC_15m_5m
 ```
@@ -410,9 +373,9 @@ IPC_15m_5m
 30-minute grid every 1-minute:
 
 ```{r}
-IPC_30m_1m <- IPC_tbl_tm %>% 
+IPC_30m_1m <- IPC_fr %>% 
   mutate(ret_30m = thirty_roll_sum(log_ret)) %>% 
-  select(tidy_date, tidy_time, ret_30m) %>%
+  select(index_date, index_time, ret_30m) %>%
   filter(!is.na(ret_30m))
 
 IPC_30m_1m
@@ -421,11 +384,11 @@ IPC_30m_1m
 30-minute grid every 3-minutes:
 
 ```{r}
-IPC_30m_3m <- IPC_tbl_tm %>% 
+IPC_30m_3m <- IPC_fr %>% 
   mutate(ret_30m = thirty_roll_sum(log_ret)) %>% 
-  select(tidy_date, tidy_time, ret_30m) %>%
+  select(index_date, index_time, ret_30m) %>%
   filter(!is.na(ret_30m)) %>% 
-  slice(seq(1, nrow(IPC_tbl_tm), by = 3))
+  slice(seq(1, nrow(IPC_fr), by = 3))
 
 IPC_30m_3m
 ```
@@ -433,11 +396,11 @@ IPC_30m_3m
 30-minute grid every 5-minutes:
 
 ```{r}
-IPC_30m_5m <- IPC_tbl_tm %>% 
+IPC_30m_5m <- IPC_fr %>% 
   mutate(ret_30m = thirty_roll_sum(log_ret)) %>% 
-  select(tidy_date, tidy_time, ret_30m) %>%
+  select(index_date, index_time, ret_30m) %>%
   filter(!is.na(ret_30m)) %>% 
-  slice(seq(1, nrow(IPC_tbl_tm), by = 5))
+  slice(seq(1, nrow(IPC_fr), by = 5))
 
 IPC_30m_5m
 ```
@@ -445,11 +408,11 @@ IPC_30m_5m
 30-minute grid every 10-minutes:
 
 ```{r}
-IPC_30m_10m <- IPC_tbl_tm %>% 
+IPC_30m_10m <- IPC_fr %>% 
   mutate(ret_30m = thirty_roll_sum(log_ret)) %>% 
-  select(tidy_date, tidy_time, ret_30m) %>%
+  select(index_date, index_time, ret_30m) %>%
   filter(!is.na(ret_30m)) %>% 
-  slice(seq(1, nrow(IPC_tbl_tm), by = 10))
+  slice(seq(1, nrow(IPC_fr), by = 10))
 
 IPC_30m_10m
 ```
@@ -459,7 +422,7 @@ Now, let's compute the RVs for each s-minute every k-minute grid:
 ```{r}
 IPC_5m_1m %>% 
   mutate(log_ret_sq = ret_5m^2) %>% 
-  group_by(tidy_date) %>% 
+  group_by(index_date) %>% 
   summarise(RV = sum(log_ret_sq),
             RV_an = 252 * sqrt(RV))
 ```

@@ -370,6 +370,8 @@ full_IPC <- joined_tbl %>%
   fill(last_price)
   
 full_IPC %>% map_df(.f = ~ sum(is.na(.)))
+
+full_IPC
 ```
 
 As we can see, only the `volume` and `no_trades` (number of trades) have missing values now.
@@ -473,12 +475,15 @@ Next, we compute the intraday returns and assign them to the `log_ret` variable.
 
 ```{r}
 returns_tbl <- IPC_signature %>%
-  mutate(log_ret = log(last_price) - lag(log(last_price)))
-   
 
+    mutate(log_ret = log(last_price) - lag(log(last_price))) %>% 
+  
+  relocate(log_ret, .after = 4)
+```
+
+```{r}
 # Remove the older df
 rm(full_IPC)
-rm(IPC_signature)
 rm(ts_index)
 rm(joined_tbl)
 rm(IPC_tbl)
@@ -486,18 +491,14 @@ rm(IPC_tbl)
 
 ## 2.5 Setting Overnight Returns to Zero
 
-Another aspect that we want to take into account is: the fact that the overnight return should not be taken into account. Therefore, we set the first log-return of each day to zero. Once again, we store these values in a new object called `IPC_oar_tbl` (which stands for IPC overnight adjusted returns tibble).
+Another aspect that we want to take into account is: the fact that the overnight return should not be taken into account. Therefore, we set the first log-return of each day to zero. Once again, we store these values in a new object called `nor_tbl` (which stands for *no overnight returns tibble*).
 
 ```{r}
-(IPC_oar_tbl <- IPC_tfr_tbl %>% 
+nor_tbl <- returns_tbl %>% 
    
-  mutate(log_ret = ifelse(test = lag(tidy_date) == tidy_date, 
+  mutate(log_ret = ifelse(test = date_change == FALSE,
                           yes = log_ret, 
-                          no = 0)) %>%
-  
-  mutate(day_change = ifelse(test = lag(tidy_date) == tidy_date, 
-                             yes = 0, 
-                             no = 1)))
+                          no = 0))
 # Remove old df
 # rm(IPC_tfr_tbl)
 ```
@@ -505,52 +506,86 @@ Another aspect that we want to take into account is: the fact that the overnight
 Our first log-return should be zero, but we have `NA`. Let's check that this is the only `NA`:
 
 ```{r}
-IPC_oar_tbl %>% 
+nor_tbl %>% 
   filter(is.na(log_ret)) %>% 
-  select(tidy_date, log_ret)
+  select(index_date, log_ret)
 ```
 
 It is indeed our only `NA`. We can set it to zero.
 
 ```{r}
-IPC_oar_tbl$log_ret[1] <- 0
+nor_tbl$log_ret[1] <- 0
 
-IPC_oar_tbl
+nor_tbl
 ```
 
-We can check that all overnight returns are zero. We've created a variable (`day_change`) that goes to `1` when we have a change in day.
+We can check that all overnight returns are zero. The variable `date_change` from the *time series index* is useful here. We extract the distinct values of the `log_ret` variable along with the `date_change` variable. We should get that all values for `date_change` are `TRUE`, and all values for `log_ret` are `0`.
 
 ```{r}
-IPC_oar_tbl %>% 
-  filter(day_change == 1) %>% 
-  select(log_ret) %>% 
-  unique()
+nor_tbl %>% 
+  filter(date_change == 1) %>% 
+  distinct(log_ret, date_change) 
 ```
 
 Moreover, the number of overnight returns that have been set to zero should be one less than the number of different dates we have for the `tidy_date` variable. Let's check if this holds true:
 
 ```{r}
-IPC_oar_tbl %>% 
-  filter(day_change == 1) %>% 
-  select(trade_id, tidy_date, log_ret)
+nor_tbl %>% 
+  filter(date_change == TRUE) %>% 
+  select(index_date, log_ret, date_change)
 ```
 
-We have `5,607` datapoints where `day_change = 1`. This should be one less than the amount of different dates (one less because the first date doesn't have `day_change` set to one).
+We have `5,612` datapoints where `date_change = TRUE`. This should be one less than the amount of different dates (one less because the first date doesn't have `date_change` set to one).
 
 ```{r}
-IPC_oar_tbl %>% select(tidy_date) %>% unique() %>% nrow()
+nor_tbl %>% distinct(index_date) %>% nrow()
 ```
 
 Thus, we see that this holds true. We have correctly set the overnight returns to zero.
+
+```{r plotting-returns, cache = T}
+returns_plot <- nor_tbl %>% 
+  ggplot(aes(index, log_ret)) +
+  geom_point(aes(alpha = .005,
+                 colour = log_ret >= 0), 
+             show.legend = FALSE) +
+  scale_color_manual(values = amazing_colors[c(2,8)]) +
+  labs(
+    title = "Visualizing 1-minute log-returns for the S&P/BMV IPC",
+    x = NULL,
+    y = NULL
+  ) +
+  scale_x_datetime(date_breaks = "2 years", 
+                   date_labels = "%Y") +
+  scale_y_continuous(breaks = seq(-0.05, 0.05, by = 0.01),
+                     labels = scales::percent_format(accuracy = 0.1)) +
+  theme(
+    plot.background = element_rect(fill = "#F4F3EE")
+  )
+
+returns_plot
+```
+
+```{r}
+# ggsave(
+#   filename = "IPC_returns.png",
+#   units = "in",
+#   width = 8 * 1.61803398875,
+#   height = 8,
+#   path = here("02-Plots"),
+#   dpi = 500,
+#   device = "png"
+# )
+```
 
 ## 2.6 Removing Outliers
 
 We want to filter out log-returns whose absolute value is greater than some threshold. We'll do this again later for 5-minute returns and 30-minute returns. We define the threshold such that we are filtering keeping \~ 99% of the original data. Log-returns that are outside of the defined threshold are immediately set to zero.
 
 ```{r}
-threshold <- 0.0012
+threshold <- 0.02
 
-IPC_fr <- IPC_oar_tbl %>% 
+IPC_fr <- nor_tbl %>% 
   
   # we keep values below the threshold
   mutate(log_ret = ifelse(test = abs(log_ret) < threshold, 
@@ -562,7 +597,35 @@ IPC_fr <- IPC_oar_tbl %>%
 # rm(IPC_oar_tbl)
 ```
 
-In this case we've set the variable `threshold` to the value (`0.0012`) such that we're filtering out \~ 1% of the data. We store the filtered data in the `IPC_fr` tibble (which stands for IPC filtered returns).
+In this case we've set the variable `threshold` to the value (`0.0012`) such that we're filtering out \~ 1% of the data (25,326 values). We store the filtered data in the `IPC_fr` tibble (which stands for IPC filtered returns).
+
+```{r}
+returns_plot2 <- IPC_fr %>% 
+  ggplot(aes(index, log_ret)) +
+  geom_point(aes(alpha = .005,
+                 colour = log_ret >= 0), 
+             show.legend = FALSE) +
+  scale_color_manual(values = amazing_colors[c(2,8)]) +
+  labs(
+    title = "Visualizing 1-minute log-returns for the S&P/BMV IPC",
+    x = NULL,
+    y = NULL
+  ) +
+  scale_x_datetime(date_breaks = "2 years", 
+                   date_labels = "%Y") +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.1)) +
+  theme(
+    plot.background = element_rect(fill = "#F4F3EE")
+  )
+
+returns_plot2
+```
+
+```{r}
+# Write data to parquet
+IPC_fr %>% 
+  write_parquet(sink = here("01-Data", "parquet", "IPC_fr2.parquet"))
+```
 
 # IPC and Volatility Indices -- Daily Data
 
