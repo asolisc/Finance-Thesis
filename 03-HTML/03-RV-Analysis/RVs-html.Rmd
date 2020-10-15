@@ -40,6 +40,7 @@ knitr::opts_chunk$set(
 library(tidyverse)
 library(lubridate)
 library(skimr)
+library(glue)
 # library(tidylog)
 
 # Time Series
@@ -245,15 +246,65 @@ RV_s30 <- IPC_30m %>%
             RVs30_an = 252 * sqrt(RVs30))
 ```
 
+```{r}
+get_RV_sparse <- function(.grid_vec, 
+                          .ret_tbl = IPC_fr, 
+                          .index_by = index_date) {
+  
+  # Define rolling sum function
+  roll_sum <- slidify(
+    .f = ~sum(.x), 
+    .period = .grid_vec, 
+    .align = "right")
+  
+  # Define new return table
+  new_ret_tbl <- .ret_tbl %>% 
+    mutate(ret_grid = roll_sum(log_ret)) %>% 
+    select({{ .index_by }}, ret_grid) %>%
+    filter(!is.na(ret_grid)) %>% 
+    slice(seq(1, nrow(.ret_tbl), by = .grid_vec))
+  
+  # Define new RV table
+  new_RV_tbl <- new_ret_tbl %>% 
+    mutate(log_ret_sq = ret_grid^2) %>% 
+    group_by({{ .index_by }}) %>% 
+    summarise(
+      "RVs{{ .grid_vec }}" := sum(log_ret_sq)
+      # "RVs{{ .grid_vec }}_an" := 252 * sqrt("RVs{{ .grid_vec }}")
+      )
+  
+  return(new_RV_tbl)
+  
+}
+```
+
+
+```{r}
+# Define a vector with all the "s"-grid parameters
+sparse_grid <- seq(1, 5, 1)
+
+
+# Create a tibble with all the nested data
+all_RV_sparse <- tibble(
+  my_result = x %>% map(.f = ~ get_RV_sparse(.grid_vec = .))
+)
+
+# Expand the tibble
+# all_RV_sparse %>% flatten()
+
+```
+
 ## Volatility signature plot
 
 The Sparse RV Estimator is calculated using an *s*-minute grid ($s \geq 1$):
 
-\\begin{equation} RV\\\_{t+1}\^s = \\sum \\limits\_{j=1}\^{m/s} R\^2\_{t+js/m} \\end{equation}
+\begin{equation} 
+RV_{t+1}^s = \sum \limits_{j=1}^{m/s} R^2_{t+js/m} 
+\end{equation}
 
-Now the problem lies in the choice of the subsampling parameter $s$, a problem which represents a typical bias-variance trade-off. That is because ...
+Now the problem lies in the choice of the sub-sampling parameter $s$, a problem which represents a typical bias-variance trade-off. That is because ...
 
-This is where volatility signature plots (VSP) will help; these are a graphical tool that helps us choose the subsampling parameter $s$. We do a VSP in the following manner:
+This is where volatility signature plots (VSP) will help; these are a graphical tool that helps us choose the sub-sampling parameter $s$. We do a VSP in the following manner:
 
 1.  Compute $RV_{t+1}^s$ for values of $s$ going from 1 to 120 minutes.
 
