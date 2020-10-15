@@ -89,10 +89,6 @@ For this section, we'll transform our dataset into a `timetibble` object, so tha
 # IPC_fr
 ```
 
-```{r}
-IPC_fr %>% View()
-```
-
 We can now compute the realized variance for each day:
 
 ```{r}
@@ -144,107 +140,7 @@ rv_plot
 
 An *RV Sparse* estimator consists of calculating the realized variance but with a sample that is less frequent than the 1-minute grid. Instead, it is sampled in an *s*-minute grid (where $s \geq 1$).
 
-Here, we will use different combinations of $s$ such as `s = 5`, `s = 10`, `s = 15`, and `s = 30`. In order to sample in an *s*-minute grid, we make use of the following auxiliary rolling-functions:
-
-```{r}
-# For a 5-minute grid:
-five_roll_sum <- slidify(
-  .f = ~sum(.x), 
-  .period = 5, 
-  .align = "right")
-
-# For a 10-minute grid:
-ten_roll_sum <- slidify(
-  .f = ~sum(.x), 
-  .period = 10, 
-  .align = "right")
-
-
-# For a 15-minute grid:
-fifteen_roll_sum <- slidify(
-  .f = ~sum(.x), 
-  .period = 15, 
-  .align = "right")
-
-
-# For a 30-minute grid:
-thirty_roll_sum <- slidify(
-  .f = ~sum(.x), 
-  .period = 30, 
-  .align = "right")
-```
-
-We can now subset the data to a five-minute grid. We'll call this new data `IPC_5m`.
-
-```{r}
-IPC_5m <- IPC_fr %>% 
-  mutate(ret_5m = five_roll_sum(log_ret)) %>% 
-  select(index_date, index_time, ret_5m) %>%
-  filter(!is.na(ret_5m)) %>% 
-  slice(seq(1, nrow(IPC_fr), by = 5))
-```
-
-```{r}
-RV_s5 <- IPC_5m %>% 
-  mutate(log_ret_sq = ret_5m^2) %>% 
-  group_by(index_date) %>% 
-  summarise(RVs5 = sum(log_ret_sq),
-            RVs5_an = 252 * sqrt(RVs5))
-```
-
-Now we repeat the process for a $s = 10$ grid:
-
-```{r}
-IPC_10m <- IPC_fr %>%
-  mutate(ret_10m = ten_roll_sum(log_ret)) %>% 
-  select(index_date, index_time, ret_10m) %>%
-  filter(!is.na(ret_10m)) %>% 
-  slice(seq(1, nrow(IPC_fr), by = 10))
-```
-
-```{r}
-RV_s10 <- IPC_10m %>% 
-  mutate(log_ret_sq = ret_10m^2) %>% 
-  group_by(index_date) %>% 
-  summarise(RVs10 = sum(log_ret_sq),
-            RVs10_an = 252 * sqrt(RVs10))
-```
-
-And then again, for the $s = 15$ grid:
-
-```{r}
-IPC_15m <- IPC_fr %>% 
-  mutate(ret_15m = fifteen_roll_sum(log_ret)) %>% 
-  select(index_date, index_time, ret_15m) %>%
-  filter(!is.na(ret_15m)) %>% 
-  slice(seq(1, nrow(IPC_fr), by = 15))
-```
-
-```{r}
-RV_s15 <- IPC_15m %>% 
-  mutate(log_ret_sq = ret_15m^2) %>% 
-  group_by(index_date) %>% 
-  summarise(RVs15 = sum(log_ret_sq),
-            RVs15_an = 252 * sqrt(RVs15))
-```
-
-And lastly, for the $s = 30$ grid:
-
-```{r}
-IPC_30m <- IPC_fr %>% 
-  mutate(ret_30m = thirty_roll_sum(log_ret)) %>% 
-  select(index_date, index_time, ret_30m) %>%
-  filter(!is.na(ret_30m)) %>% 
-  slice(seq(1, nrow(IPC_fr), by = 30))
-```
-
-```{r}
-RV_s30 <- IPC_30m %>% 
-  mutate(log_ret_sq = ret_30m^2) %>% 
-  group_by(index_date) %>% 
-  summarise(RVs30 = sum(log_ret_sq),
-            RVs30_an = 252 * sqrt(RVs30))
-```
+Here, we will use different combinations of $s$ such as `s = 5`, `s = 10`, `s = 15`, and `s = 30`. In order to plot a *signature plot*, we will also sample from $s \in [1, 120]$.
 
 ```{r}
 get_RV_sparse <- function(.grid_vec, 
@@ -269,8 +165,10 @@ get_RV_sparse <- function(.grid_vec,
     mutate(log_ret_sq = ret_grid^2) %>% 
     group_by({{ .index_by }}) %>% 
     summarise(
-      "RVs{{ .grid_vec }}" := sum(log_ret_sq)
-      # "RVs{{ .grid_vec }}_an" := 252 * sqrt("RVs{{ .grid_vec }}")
+      RV_sparse = sum(log_ret_sq),
+      RV_sparse_an = 252 * sqrt(RV_sparse)
+      # "RVs{{ .grid_vec }}" := sum(log_ret_sq),
+      # "RVs{{ .grid_vec }}_an" := 252 * sqrt(eval(as.name(paste0("RVs", {{.grid_vec}}))))
       )
   
   return(new_RV_tbl)
@@ -278,67 +176,57 @@ get_RV_sparse <- function(.grid_vec,
 }
 ```
 
-
-```{r}
-# Define a vector with all the "s"-grid parameters
-sparse_grid <- seq(1, 5, 1)
-
-
-# Create a tibble with all the nested data
-all_RV_sparse <- tibble(
-  my_result = x %>% map(.f = ~ get_RV_sparse(.grid_vec = .))
-)
-
-# Expand the tibble
-# all_RV_sparse %>% flatten()
-
-```
-
 ## Volatility signature plot
 
 The Sparse RV Estimator is calculated using an *s*-minute grid ($s \geq 1$):
 
-\begin{equation} 
+$$ 
 RV_{t+1}^s = \sum \limits_{j=1}^{m/s} R^2_{t+js/m} 
-\end{equation}
+$$
 
 Now the problem lies in the choice of the sub-sampling parameter $s$, a problem which represents a typical bias-variance trade-off. That is because ...
 
-This is where volatility signature plots (VSP) will help; these are a graphical tool that helps us choose the sub-sampling parameter $s$. We do a VSP in the following manner:
+This is where *volatility signature plots* (VSP) will help; these are a graphical tool that helps us choose the sub-sampling parameter $s$. We do a VSP in the following manner:
 
 1.  Compute $RV_{t+1}^s$ for values of $s$ going from 1 to 120 minutes.
 
-```{r}
-all_RV_sparse <- RVs %>% 
-  left_join(y = RV_s5, by = "index_date") %>% 
-  left_join(y = RV_s10, by = "index_date") %>% 
-  left_join(y = RV_s15, by = "index_date") %>% 
-  left_join(y = RV_s30, by = "index_date")
+```{r get-all-RV-sparse}
+# Define a vector with all the "s-grid" parameters
+sparse_grid <- seq(from = 1, 
+                   to = 240, 
+                   by = 1)
 
-all_RV_sparse
+
+# Create a tibble with all the nested data
+nested_RV_sparse <- tibble(
+  my_result = sparse_grid %>% map(.f = ~ get_RV_sparse(.grid_vec = .)),
+  s_grid = sparse_grid
+)
+```
+
+```{r unnest-RV-sparse}
+# Expand the tibble
+all_RV_sparse <- nested_RV_sparse %>% unnest(cols = c(my_result))
+
+
+# Get the mean for each RV sparse:
+RV_means <- all_RV_sparse %>% 
+  group_by(s_grid) %>% 
+  summarise(
+    mean_RV_sparse = mean(RV_sparse_an)
+  )
 ```
 
 2.  Scatter plot the average RV across days on the vertical axis against $s$ on the horizontal axis.
 
-```{r}
-signature_plot_data <- all_RV_sparse %>% 
-  summarise(s1 = mean(RV),
-            s5 = mean(RVs5),
-            s10 = mean(RVs10),
-            s15 = mean(RVs15),
-            s30 = mean(RVs30)
-            ) %>% 
-  pivot_longer(cols = everything(), names_to = "s", values_to = "avg_RV_sparse") %>% 
-  add_column(minutes = c(1, 5, 10, 15, 30))
-```
-
 ```{r, layout="l-body-outset", fig.width=8, fig.asp=0.618}
-signature_plot_data %>% 
-  ggplot(aes(minutes, avg_RV_sparse)) +
-  # geom_smooth(colour = amazing_colors[2]) +
-  geom_point(colour = amazing_colors[3], size = 3) +
+RV_means %>% 
+  ggplot(aes(s_grid , mean_RV_sparse)) +
+  geom_point(alpha = 0.6, 
+             colour = amazing_colors[1], 
+             size = 2) +
   labs(
-    title = "Signature Plot for the RV Sparse",
+    title = "Signature Plot for the Annualized RV Sparse",
     x = "Minutes",
     y = "RV"
   ) +
