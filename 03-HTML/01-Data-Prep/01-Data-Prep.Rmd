@@ -583,7 +583,7 @@ returns_plot
 We want to filter out log-returns whose absolute value is greater than some threshold. We'll do this again later for 5-minute returns and 30-minute returns. We define the threshold such that we are filtering keeping \~ 99% of the original data. Log-returns that are outside of the defined threshold are immediately set to zero.
 
 ```{r}
-threshold <- 0.02
+threshold <- 0.0012
 
 IPC_fr <- nor_tbl %>% 
   
