@@ -1,0 +1,127 @@
+---
+title: "Untitled"
+description: |
+  A new article created using the Distill format.
+author:
+  - name: Nora Jones 
+    url: https://example.com/norajones
+    affiliation: Spacely Sprockets
+    affiliation_url: https://example.com/spacelysprokets
+date: "`r Sys.Date()`"
+output: distill::distill_article
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+This is the OLD RV Sparse Code:
+
+
+## RV Sparse
+
+An *RV Sparse* estimator consists of calculating the realized variance but with a sample that is less frequent than the 1-minute grid. Instead, it is sampled in an *s*-minute grid (where $s \geq 1$).
+
+Here, we will use different combinations of $s$ such as `s = 5`, `s = 10`, `s = 15`, and `s = 30`. In order to sample in an *s*-minute grid, we make use of the following auxiliary rolling-functions:
+
+```{r}
+# For a 5-minute grid:
+five_roll_sum <- slidify(
+  .f = ~sum(.x), 
+  .period = 5, 
+  .align = "right")
+
+# For a 10-minute grid:
+ten_roll_sum <- slidify(
+  .f = ~sum(.x), 
+  .period = 10, 
+  .align = "right")
+
+
+# For a 15-minute grid:
+fifteen_roll_sum <- slidify(
+  .f = ~sum(.x), 
+  .period = 15, 
+  .align = "right")
+
+
+# For a 30-minute grid:
+thirty_roll_sum <- slidify(
+  .f = ~sum(.x), 
+  .period = 30, 
+  .align = "right")
+```
+
+We can now subset the data to a five-minute grid. We'll call this new data `IPC_5m`.
+
+```{r}
+IPC_5m <- IPC_fr %>% 
+  mutate(ret_5m = five_roll_sum(log_ret)) %>% 
+  select(index_date, index_time, ret_5m) %>%
+  filter(!is.na(ret_5m)) %>% 
+  slice(seq(1, nrow(IPC_fr), by = 5))
+```
+
+```{r}
+RV_s5 <- IPC_5m %>% 
+  mutate(log_ret_sq = ret_5m^2) %>% 
+  group_by(index_date) %>% 
+  summarise(RVs5 = sum(log_ret_sq),
+            RVs5_an = 252 * sqrt(RVs5))
+```
+
+Now we repeat the process for a $s = 10$ grid:
+
+```{r}
+IPC_10m <- IPC_fr %>%
+  mutate(ret_10m = ten_roll_sum(log_ret)) %>% 
+  select(index_date, index_time, ret_10m) %>%
+  filter(!is.na(ret_10m)) %>% 
+  slice(seq(1, nrow(IPC_fr), by = 10))
+```
+
+```{r}
+RV_s10 <- IPC_10m %>% 
+  mutate(log_ret_sq = ret_10m^2) %>% 
+  group_by(index_date) %>% 
+  summarise(RVs10 = sum(log_ret_sq),
+            RVs10_an = 252 * sqrt(RVs10))
+```
+
+And then again, for the $s = 15$ grid:
+
+```{r}
+IPC_15m <- IPC_fr %>% 
+  mutate(ret_15m = fifteen_roll_sum(log_ret)) %>% 
+  select(index_date, index_time, ret_15m) %>%
+  filter(!is.na(ret_15m)) %>% 
+  slice(seq(1, nrow(IPC_fr), by = 15))
+```
+
+```{r}
+RV_s15 <- IPC_15m %>% 
+  mutate(log_ret_sq = ret_15m^2) %>% 
+  group_by(index_date) %>% 
+  summarise(RVs15 = sum(log_ret_sq),
+            RVs15_an = 252 * sqrt(RVs15))
+```
+
+And lastly, for the $s = 30$ grid:
+
+```{r}
+IPC_30m <- IPC_fr %>% 
+  mutate(ret_30m = thirty_roll_sum(log_ret)) %>% 
+  select(index_date, index_time, ret_30m) %>%
+  filter(!is.na(ret_30m)) %>% 
+  slice(seq(1, nrow(IPC_fr), by = 30))
+```
+
+```{r}
+RV_s30 <- IPC_30m %>% 
+  mutate(log_ret_sq = ret_30m^2) %>% 
+  group_by(index_date) %>% 
+  summarise(RVs30 = sum(log_ret_sq),
+            RVs30_an = 252 * sqrt(RVs30))
+```
+
