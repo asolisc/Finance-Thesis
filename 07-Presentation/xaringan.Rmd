@@ -20,7 +20,9 @@ background-size: contain
 ```{r setup, include=FALSE}
 options(htmltools.dir.version = FALSE)
 library(xaringanthemer)
-
+library(tidyverse)
+library(arrow)
+library(here)
 
 # Source all code
 rstudioapi::jobRunScript("../03-HTML/01-Data-Prep/01-Data-Prep-script.R",
