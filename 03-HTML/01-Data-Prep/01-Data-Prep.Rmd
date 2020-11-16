@@ -183,7 +183,11 @@ IPC_tbl %>%
   count(tidy_hour, sort = T, name = "trades_per_hour") %>% 
   # mutate(tidy_hour = fct_reorder(tidy_hour, .x = trades_per_hour, .desc = T)) %>%
   ggplot(aes(tidy_hour, trades_per_hour)) +
-  geom_col(fill = amazing_colors[8]) +
+  geom_col(aes(fill = between(x = as.numeric(tidy_hour), 
+                              left = 5, 
+                              right = 10)),
+           show.legend = F) +
+  scale_fill_manual(values = amazing_colors[c(2,8)]) +
   scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
   labs(
     title = "No. Prices per Hour in the Sample",
@@ -201,9 +205,12 @@ IPC_tbl %>%
   filter(tidy_hour == 8) %>% 
   count(tidy_minute, sort = T, name = "trades_per_minute") %>% 
   ggplot(aes(tidy_minute, trades_per_minute)) +
-  geom_col(fill = amazing_colors[8]) +
+  geom_col(aes(fill = tidy_minute < 30),
+           show.legend = F) +
+  scale_fill_manual(values = amazing_colors[c(8,2)]) +
   scale_x_continuous(breaks = seq(0, 60, 5)) +
-  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+  scale_y_continuous(labels = scales::number_format(big.mark = ","),
+                     breaks = c(0, 300, 5000)) +
   labs(
     title = "Number of Trades per Minute from 8:00AM-8:59AM",
     x = "Minute",
@@ -222,7 +229,9 @@ IPC_tbl %>%
   filter(tidy_hour == 15) %>% 
   count(tidy_minute, sort = T, name = "trades_per_minute") %>% 
   ggplot(aes(tidy_minute, trades_per_minute)) +
-  geom_col(fill = amazing_colors[8]) +
+  geom_col(aes(fill = trades_per_minute > 2500),
+           show.legend = F) +
+  scale_fill_manual(values = amazing_colors[c(8,2)]) +
   scale_x_continuous(breaks = seq(0, 60, 5)) +
   scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
     labs(
