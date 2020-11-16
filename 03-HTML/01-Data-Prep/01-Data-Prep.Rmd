@@ -183,7 +183,7 @@ IPC_tbl %>%
   count(tidy_hour, sort = T, name = "trades_per_hour") %>% 
   # mutate(tidy_hour = fct_reorder(tidy_hour, .x = trades_per_hour, .desc = T)) %>%
   ggplot(aes(tidy_hour, trades_per_hour)) +
-  geom_col(fill = amazing_colors[1]) +
+  geom_col(fill = amazing_colors[8]) +
   scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
   labs(
     title = "No. Prices per Hour in the Sample",
