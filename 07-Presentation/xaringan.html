@@ -5,6 +5,10 @@
     <meta charset="utf-8" />
     <meta name="author" content="Alexis Solis Cancino" />
     <script src="libs/header-attrs/header-attrs.js"></script>
+    <link href="libs/tile-view/tile-view.css" rel="stylesheet" />
+    <script src="libs/tile-view/tile-view.js"></script>
+    <link href="libs/panelset/panelset.css" rel="stylesheet" />
+    <script src="libs/panelset/panelset.js"></script>
     <script src="libs/htmlwidgets/htmlwidgets.js"></script>
     <script src="libs/jquery/jquery.min.js"></script>
     <link href="libs/leaflet/leaflet.css" rel="stylesheet" />
@@ -28,15 +32,18 @@
 class: center, middle, inverse, title-slide
 
 # Realized Higher Moment Measures
-## Modeling financial volatility from a data science framework
+## A data science take on high-frequency financial data
 ### Alexis Solis Cancino
 ### ITAM
-### 2020/11/04 (updated: 2020-11-14)
+### 2020/11/04 (updated: 2020-11-15)
 
 ---
 
 background-image: url("../02-Plots/IPC_returns.png")
 background-size: contain
+
+
+
 
 
 
@@ -53,34 +60,98 @@ class: center, middle
 ---
 class: header_background
 
+
+
 # Raw Data
 
-Intraday data for the *S&amp;P/BMV IPC Equity Index*. The data consists of `n = 2,133,890` observations and `k = 23` variables. The time series is composed of prices and trades per minute, spanning from the beginning of 1996 through the first half of 2018.
+* Intraday data for the *S&amp;P/BMV IPC Equity Index*. 
 
+.panelset[
+
+.panel[.panel-name[Dimensions]
+
+* 2M+ observations (`n = 2,133,890`) and `k = 23` variables. 
 
 
 ```r
-# Read the data
-IPC &lt;- read_parquet(file = here("01-Data", 
-                                "parquet", 
-                                "raw_MEXICO_IPC.parquet"))
+IPC %&gt;% dim()
+```
 
+```
+## [1] 2133890      23
+```
+
+]
+
+.panel[.panel-name[Time series]
+
+* Time series composed of prices and trades per minute. 
+
+* The data begins in 1996 and goes all the way through the first half of 2018.
+
+
+```r
+IPC %&gt;% select(2) %&gt;% slice(1,nrow(IPC)) %&gt;% pull()
+```
+
+```
+## [1] 19960102 20180605
+```
+]
+
+.panel[.panel-name[Variables]
+
+
+```r
 IPC %&gt;% names()
 ```
 
 ```
-##  [1] "#RIC"                  "Date[L]"              
-##  [3] "Time[L]"               "Type"                 
-##  [5] "Open"                  "High"                 
-##  [7] "Low"                   "Last"                 
-##  [9] "Volume"                "Ave. Price"           
-## [11] "VWAP"                  "No. Trades"           
-## [13] "Correction Qualifiers" "Open Bid"             
-## [15] "High Bid"              "Low Bid"              
-## [17] "Close Bid"             "No. Bids"             
-## [19] "Open Ask"              "High Ask"             
-## [21] "Low Ask"               "Close Ask"            
-## [23] "No. Asks"
+##  [1] "#RIC"                  "Date[L]"               "Time[L]"              
+##  [4] "Type"                  "Open"                  "High"                 
+##  [7] "Low"                   "Last"                  "Volume"               
+## [10] "Ave. Price"            "VWAP"                  "No. Trades"           
+## [13] "Correction Qualifiers" "Open Bid"              "High Bid"             
+## [16] "Low Bid"               "Close Bid"             "No. Bids"             
+## [19] "Open Ask"              "High Ask"              "Low Ask"              
+## [22] "Close Ask"             "No. Asks"
+```
+
+]
+
+]
+
+
+
+
+---
+# Other variables
+
+Here's the rest of the columns.
+
+
+```r
+IPC %&gt;% select(9:23) %&gt;%  glimpse()
+```
+
+```
+## Rows: 2,133,890
+## Columns: 15
+## $ Volume                  &lt;dbl&gt; 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0...
+## $ `Ave. Price`            &lt;dbl&gt; 2777.470, 2777.470, 2777.470, 2777.470, ...
+## $ VWAP                    &lt;lgl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
+## $ `No. Trades`            &lt;dbl&gt; 1, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2...
+## $ `Correction Qualifiers` &lt;lgl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
+## $ `Open Bid`              &lt;lgl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
+## $ `High Bid`              &lt;lgl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
+## $ `Low Bid`               &lt;lgl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
+## $ `Close Bid`             &lt;lgl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
+## $ `No. Bids`              &lt;dbl&gt; 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0...
+## $ `Open Ask`              &lt;lgl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
+## $ `High Ask`              &lt;lgl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
+## $ `Low Ask`               &lt;lgl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
+## $ `Close Ask`             &lt;lgl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
+## $ `No. Asks`              &lt;dbl&gt; 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0...
 ```
 
 ---
@@ -362,8 +433,8 @@ library(leaflet)
 leaflet() %&gt;% addTiles() %&gt;% setView(-93.65, 42.0285, zoom = 17)
 ```
 
-<div id="htmlwidget-57bbc32f0af6ebbcc29d" style="width:100%;height:432px;" class="leaflet html-widget"></div>
-<script type="application/json" data-for="htmlwidget-57bbc32f0af6ebbcc29d">{"x":{"options":{"crs":{"crsClass":"L.CRS.EPSG3857","code":null,"proj4def":null,"projectedBounds":null,"options":{}}},"calls":[{"method":"addTiles","args":["//{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",null,null,{"minZoom":0,"maxZoom":18,"tileSize":256,"subdomains":"abc","errorTileUrl":"","tms":false,"noWrap":false,"zoomOffset":0,"zoomReverse":false,"opacity":1,"zIndex":1,"detectRetina":false,"attribution":"&copy; <a href=\"http://openstreetmap.org\">OpenStreetMap<\/a> contributors, <a href=\"http://creativecommons.org/licenses/by-sa/2.0/\">CC-BY-SA<\/a>"}]}],"setView":[[42.0285,-93.65],17,[]]},"evals":[],"jsHooks":[]}</script>
+<div id="htmlwidget-a198a35c82e54f96fead" style="width:100%;height:432px;" class="leaflet html-widget"></div>
+<script type="application/json" data-for="htmlwidget-a198a35c82e54f96fead">{"x":{"options":{"crs":{"crsClass":"L.CRS.EPSG3857","code":null,"proj4def":null,"projectedBounds":null,"options":{}}},"calls":[{"method":"addTiles","args":["//{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",null,null,{"minZoom":0,"maxZoom":18,"tileSize":256,"subdomains":"abc","errorTileUrl":"","tms":false,"noWrap":false,"zoomOffset":0,"zoomReverse":false,"opacity":1,"zIndex":1,"detectRetina":false,"attribution":"&copy; <a href=\"http://openstreetmap.org\">OpenStreetMap<\/a> contributors, <a href=\"http://creativecommons.org/licenses/by-sa/2.0/\">CC-BY-SA<\/a>"}]}],"setView":[[42.0285,-93.65],17,[]]},"evals":[],"jsHooks":[]}</script>
 
 ---
 
@@ -375,8 +446,8 @@ DT::datatable(
 )
 ```
 
-<div id="htmlwidget-00e8e2da9e5b1a550adf" style="width:100%;height:auto;" class="datatables html-widget"></div>
-<script type="application/json" data-for="htmlwidget-00e8e2da9e5b1a550adf">{"x":{"filter":"none","fillContainer":false,"data":[["1","2","3","4","5","6","7","8","9","10"],[5.1,4.9,4.7,4.6,5,5.4,4.6,5,4.4,4.9],[3.5,3,3.2,3.1,3.6,3.9,3.4,3.4,2.9,3.1],[1.4,1.4,1.3,1.5,1.4,1.7,1.4,1.5,1.4,1.5],[0.2,0.2,0.2,0.2,0.2,0.4,0.3,0.2,0.2,0.1],["setosa","setosa","setosa","setosa","setosa","setosa","setosa","setosa","setosa","setosa"]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th> <\/th>\n      <th>Sepal.Length<\/th>\n      <th>Sepal.Width<\/th>\n      <th>Petal.Length<\/th>\n      <th>Petal.Width<\/th>\n      <th>Species<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"pageLength":8,"columnDefs":[{"className":"dt-right","targets":[1,2,3,4]},{"orderable":false,"targets":0}],"order":[],"autoWidth":false,"orderClasses":false,"lengthMenu":[8,10,25,50,100]}},"evals":[],"jsHooks":[]}</script>
+<div id="htmlwidget-1e4ee5b63f3e22b5cb55" style="width:100%;height:auto;" class="datatables html-widget"></div>
+<script type="application/json" data-for="htmlwidget-1e4ee5b63f3e22b5cb55">{"x":{"filter":"none","fillContainer":false,"data":[["1","2","3","4","5","6","7","8","9","10"],[5.1,4.9,4.7,4.6,5,5.4,4.6,5,4.4,4.9],[3.5,3,3.2,3.1,3.6,3.9,3.4,3.4,2.9,3.1],[1.4,1.4,1.3,1.5,1.4,1.7,1.4,1.5,1.4,1.5],[0.2,0.2,0.2,0.2,0.2,0.4,0.3,0.2,0.2,0.1],["setosa","setosa","setosa","setosa","setosa","setosa","setosa","setosa","setosa","setosa"]],"container":"<table class=\"display\">\n  <thead>\n    <tr>\n      <th> <\/th>\n      <th>Sepal.Length<\/th>\n      <th>Sepal.Width<\/th>\n      <th>Petal.Length<\/th>\n      <th>Petal.Width<\/th>\n      <th>Species<\/th>\n    <\/tr>\n  <\/thead>\n<\/table>","options":{"pageLength":8,"columnDefs":[{"className":"dt-right","targets":[1,2,3,4]},{"orderable":false,"targets":0}],"order":[],"autoWidth":false,"orderClasses":false,"lengthMenu":[8,10,25,50,100]}},"evals":[],"jsHooks":[]}</script>
 
 ---
 
@@ -684,9 +755,9 @@ names(xaringan:::list_css())
 ## [19] "ninjutsu"         "rladies-fonts"    "rladies"         
 ## [22] "robot-fonts"      "robot"            "rutgers-fonts"   
 ## [25] "rutgers"          "shinobi"          "tamu-fonts"      
-## [28] "tamu"             "uo-fonts"         "uo"              
-## [31] "uol-fonts"        "uol"              "useR-fonts"      
-## [34] "useR"
+## [28] "tamu"             "uio-fonts"        "uio"             
+## [31] "uo-fonts"         "uo"               "uol-fonts"       
+## [34] "uol"              "useR-fonts"       "useR"
 ```
 
 ---

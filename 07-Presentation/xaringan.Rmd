@@ -1,6 +1,6 @@
 ---
 title: "Realized Higher Moment Measures"
-subtitle: "Modeling financial volatility from a data science framework"
+subtitle: "A data science take on high-frequency financial data"
 author: "Alexis Solis Cancino"
 institute: "ITAM"
 date: "2020/11/04 (updated: `r Sys.Date()`)"
@@ -13,6 +13,8 @@ output:
       highlightLines: true
       countdown: 30000
       countIncrementalSlides: false
+editor_options: 
+  chunk_output_type: console
 ---
 background-image: url("../02-Plots/IPC_returns.png")
 background-size: contain
@@ -20,14 +22,21 @@ background-size: contain
 ```{r setup, include=FALSE}
 options(htmltools.dir.version = FALSE)
 library(xaringanthemer)
+library(xaringanExtra)
 library(tidyverse)
 library(arrow)
 library(here)
 
 # Source all code
-rstudioapi::jobRunScript("../03-HTML/01-Data-Prep/01-Data-Prep-script.R",
-                         exportEnv = "R_GlobalEnv")
+# rstudioapi::jobRunScript("../03-HTML/01-Data-Prep/01-Data-Prep-script.R",
+                         # exportEnv = "R_GlobalEnv")
 ```
+
+```{r xaringan-tile-view, echo=FALSE}
+xaringanExtra::use_tile_view()
+xaringanExtra::use_panelset()
+```
+
 
 ```{r xaringan-themer, include=FALSE}
 
@@ -52,18 +61,57 @@ class: center, middle
 ---
 class: header_background
 
+```{r, echo=FALSE}
+IPC <- arrow::read_parquet(here("01-Data/parquet/raw_MEXICO_IPC.parquet"))
+```
+
 # Raw Data
 
-Intraday data for the *S&P/BMV IPC Equity Index*. The data consists of `n = 2,133,890` observations and `k = 23` variables. The time series is composed of prices and trades per minute, spanning from the beginning of 1996 through the first half of 2018.
+* Intraday data for the *S&P/BMV IPC Equity Index*. 
 
+.panelset[
+
+.panel[.panel-name[Dimensions]
+
+* 2M+ observations (`n = 2,133,890`) and `k = 23` variables. 
 
 ```{r}
-# Read the data
-IPC <- read_parquet(file = here("01-Data", 
-                                "parquet", 
-                                "raw_MEXICO_IPC.parquet"))
+IPC %>% dim()
+```
 
+]
+
+.panel[.panel-name[Time series]
+
+* Time series composed of prices and trades per minute. 
+
+* The data begins in 1996 and goes all the way through the first half of 2018.
+
+```{r panel-chunk2}
+IPC %>% select(2) %>% slice(1,nrow(IPC)) %>% pull()
+```
+]
+
+.panel[.panel-name[Variables]
+
+```{r panel-chunk}
 IPC %>% names()
+```
+
+]
+
+]
+
+
+
+
+---
+# Other variables
+
+Here's the rest of the columns.
+
+```{r}
+IPC %>% select(9:23) %>%  glimpse()
 ```
 
 ---
