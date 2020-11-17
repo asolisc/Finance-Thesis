@@ -11,9 +11,9 @@ loadfonts(device = "win")
 # Decima Theme ------------------------------------------------------------
 
 
-theme_decima <- function(){
+theme_decima <- function(font_size = 12){
   
-  theme_minimal(base_family = "Decima Mono X", base_size = 12) +
+  theme_minimal(base_family = "Decima Mono X", base_size = font_size) +
     
     theme(
       # Remove minor grid lines
@@ -35,9 +35,9 @@ theme_decima <- function(){
 # Roboto Theme ------------------------------------------------------------
 
 
-theme_roboto <- function(){
+theme_roboto <- function(font_size = 12){
   
-  theme_minimal(base_family = "Roboto Condensed", base_size = 13) +
+  theme_minimal(base_family = "Roboto Condensed", base_size = font_size) +
     
     theme(
       # Remove minor grid lines
@@ -61,9 +61,9 @@ theme_roboto <- function(){
 
 
 
-theme_plex <- function(){
+theme_plex <- function(font_size = 12){
   
-  theme_minimal(base_family = "IBM Plex Sans Condensed", base_size = 13) +
+  theme_minimal(base_family = "IBM Plex Sans Condensed", base_size = font_size) +
     
     theme(
       # Remove minor grid lines
@@ -85,9 +85,9 @@ theme_plex <- function(){
 # Fira Theme --------------------------------------------------------------
 
 
-theme_fira <- function(){
+theme_fira <- function(font_size = 12){
   
-  theme_minimal(base_family = "Fira Mono", base_size = 13) +
+  theme_minimal(base_family = "Fira Mono", base_size = font_size) +
     
     theme(
       # Remove minor grid lines
@@ -108,9 +108,9 @@ theme_fira <- function(){
 
 # Overpass Theme ----------------------------------------------------------
 
-theme_overpass <- function(){
+theme_overpass <- function(font_size = 12){
   
-  theme_minimal(base_family = "Overpass Mono", base_size = 13) +
+  theme_minimal(base_family = "Overpass Mono", base_size = font_size) +
     
     theme(
       # Remove minor grid lines
@@ -133,9 +133,9 @@ theme_overpass <- function(){
 
 # Open Sans Theme ---------------------------------------------------------
 
-theme_opensans <- function(){
+theme_opensans <- function(font_size = 12){
   
-  theme_minimal(base_family = "Open Sans", base_size = 13) +
+  theme_minimal(base_family = "Open Sans", base_size = font_size) +
     
     theme(
       # Remove minor grid lines
