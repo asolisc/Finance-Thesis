@@ -1,30 +1,30 @@
 <!DOCTYPE html>
 <html lang="" xml:lang="">
   <head>
-    <title>Realized Higher Moment Measures</title>
+    <title>A study of variance risk premium</title>
     <meta charset="utf-8" />
     <meta name="author" content="Alexis Solis Cancino" />
+    <meta name="date" content="2020-11-20" />
     <script src="libs/header-attrs/header-attrs.js"></script>
     <link href="libs/tile-view/tile-view.css" rel="stylesheet" />
     <script src="libs/tile-view/tile-view.js"></script>
     <link href="libs/panelset/panelset.css" rel="stylesheet" />
     <script src="libs/panelset/panelset.js"></script>
     <link rel="stylesheet" href="xaringan-themer.css" type="text/css" />
+    <link rel="stylesheet" href="my-theme.css" type="text/css" />
   </head>
   <body>
     <textarea id="source">
 class: top, title-slide
 
-# Realized Higher Moment Measures
-## A data science take on high-frequency financial data
+# A study of variance risk premium
+## Using high-frequency data to study volatility in equity markets
 ### Alexis Solis Cancino
 ### ITAM
-### 2020/11/04 (updated: 2020-11-15)
+### 2020-11-20
 
 ---
 
-background-image: url("../02-Plots/IPC_returns.png")
-background-size: contain
 
 
 
@@ -34,6 +34,10 @@ background-size: contain
 
 
 
+
+# What is the [S&amp;P/BMV IPC Index](https://www.spglobal.com/spdji/en/indices/equity/sp-bmv-ipc/#overview)?
+
+&lt;img src="xaringan_files/figure-html/unnamed-chunk-1-1.png" style="display: block; margin: auto;" /&gt;
 
 ---
 class: center, middle
@@ -48,7 +52,7 @@ class: header_background
 
 # Raw Data
 
-* Intraday data for the *S&amp;P/BMV IPC Equity Index*. 
+* Intraday data for the *S&amp;P/BMV IPC Equity Index* from **Thomson Reuters** (a financial data provider).
 
 .panelset[
 
@@ -56,10 +60,6 @@ class: header_background
 
 * 2M+ observations (`n = 2,133,890`) and `k = 23` variables. 
 
-
-```r
-IPC %&gt;% dim()
-```
 
 ```
 ## [1] 2133890      23
@@ -69,26 +69,38 @@ IPC %&gt;% dim()
 
 .panel[.panel-name[Time series]
 
-* Time series composed of prices and trades per minute. 
-
 * The data begins in 1996 and goes all the way through the first half of 2018.
 
-
-```r
-IPC %&gt;% select(2) %&gt;% slice(1,nrow(IPC)) %&gt;% pull()
-```
 
 ```
 ## [1] 19960102 20180605
 ```
+
 ]
+
+
+.panel[.panel-name[Intraday]
+
+* Time series composed of prices and trades per minute (**irregular**). 
+
+
+```
+## # A tibble: 6 x 1
+##   `Time[L]`
+##   &lt;time&gt;   
+## 1 08:36    
+## 2 08:38    
+## 3 08:39    
+## 4 08:40    
+## 5 08:41    
+## 6 08:42
+```
+
+]
+
 
 .panel[.panel-name[Variables]
 
-
-```r
-IPC %&gt;% names()
-```
 
 ```
 ##  [1] "#RIC"                  "Date[L]"               "Time[L]"              
@@ -109,34 +121,135 @@ IPC %&gt;% names()
 
 
 ---
-# Other variables
+# Trades in the data
 
-Here's the rest of the columns.
+.panelset[
+
+.panel[.panel-name[Irregular by Hour]
+
+&lt;img src="xaringan_files/figure-html/unnamed-chunk-5-1.png" style="display: block; margin: auto auto auto 0;" /&gt;
+]
+
+.panel[.panel-name[08:00AM-08:59AM]
+
+&lt;img src="xaringan_files/figure-html/unnamed-chunk-6-1.png" style="display: block; margin: auto;" /&gt;
+]
 
 
-```r
-IPC %&gt;% select(9:23) %&gt;%  glimpse()
-```
+.panel[.panel-name[03:00PM-03:59PM]
 
-```
-## Rows: 2,133,890
-## Columns: 15
-## $ Volume                  &lt;dbl&gt; 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0...
-## $ `Ave. Price`            &lt;dbl&gt; 2777.470, 2777.470, 2777.470, 2777.470, ...
-## $ VWAP                    &lt;lgl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
-## $ `No. Trades`            &lt;dbl&gt; 1, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2...
-## $ `Correction Qualifiers` &lt;lgl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
-## $ `Open Bid`              &lt;lgl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
-## $ `High Bid`              &lt;lgl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
-## $ `Low Bid`               &lt;lgl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
-## $ `Close Bid`             &lt;lgl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
-## $ `No. Bids`              &lt;dbl&gt; 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0...
-## $ `Open Ask`              &lt;lgl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
-## $ `High Ask`              &lt;lgl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
-## $ `Low Ask`               &lt;lgl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
-## $ `Close Ask`             &lt;lgl&gt; NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
-## $ `No. Asks`              &lt;dbl&gt; 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0...
-```
+&lt;img src="xaringan_files/figure-html/unnamed-chunk-7-1.png" style="display: block; margin: auto 0 auto auto;" /&gt;
+]
+
+]
+
+---
+class: center, middle
+
+# Moving to volatility!
+
+---
+
+# Two "kinds" of volatility
+
+.panelset[
+
+.panel[.panel-name[Realized Volatility]
+
+* The so-called _Realized Variance_ is a volatility-estimate that is calculated using high-frequency data.
+
+* Having `\(m\)` observations within a day, we can estimate the daily variance from intraday squared log-returns simply as:
+
+`\begin{equation*}
+RV_{t+1}^m = \sum \limits_{j=1}^{m} R^2_{t+j/m} 
+\end{equation*}`
+
+]
+
+.panel[.panel-name[RVs Plot]
+
+&lt;img src="xaringan_files/figure-html/unnamed-chunk-8-1.png" style="display: block; margin: auto;" /&gt;
+]
+
+.panel[.panel-name[Implied Volatility]
+
+* The so-called _implied volatility_ is calculated from equity-options prices. Assuming the pricing model is the _Black-Scholes-Merton_ model, one computes implied volatility as:
+
+`\begin{equation*}
+\sigma^{iv}_{\text{BSM}}= c^{-1}_{\text{BSM}}\big(S_t, r_f,X, \tilde T \big)
+\end{equation*}`
+
+... that is, by numerically inverting the pricing formula.
+
+
+* Index providers create indices (in a process that uses this equation), called _Volatility Indices_. The _VIMEX_, calculated by MexDer, uses the price of equity options whose underlying asset is precisely the S&amp;P/BMV IPC Index.
+
+]
+
+.panel[.panel-name[VIMEX Plot]
+
+&lt;img src="xaringan_files/figure-html/unnamed-chunk-9-1.png" style="display: block; margin: auto;" /&gt;
+
+]
+
+]
+
+---
+class: header_background
+
+# The variance risk premium (VRP)
+
+* Calculated as the difference between realized variance and implied volatility.
+
+`\begin{equation*}
+\text{VPR}_{t+1:t+k} = \big(\sigma^{iv}_{t+1:t+k} - RV_{t+1:t+k} \big)
+\end{equation*}`
+
+
+* The VRP has shown to be a good predictor for equity returns in the US.
+
+* Would it be a good predictor for Mexican equities?
+
+* This process involves forecasting RV (realized variance) for a horizon of one trading month (21 days).
+
+* HAR (Heterogeneous AutoRegression Model):
+
+`\begin{equation*}
+\ln(RV_{t+1:t+k}) = \phi_{0,k}+\phi_{d,k}\ln(RV_{d,k}) +\phi_{w,k}\ln(RV_{w,k})+\phi_{m,k}\ln(RV_{m,k}) + \varepsilon_{t+1:t+k}
+\end{equation*}`
+
+where:
+
+`\begin{equation*}
+\varepsilon_{t+1:t+k} \sim \mathcal{N}\left(0, k^2 \sigma^2_{\varepsilon}\right)
+\end{equation*}`
+
+is the innovation for RV.
+---
+class: header_background
+
+# The Returns Model
+
+* Base model: the Realized GARCH model
+
+`\begin{align*}
+R_{t+1} &amp;= \sigma_{t+1}z_{t+1} \quad, \quad z_{t+1} \sim \mathcal{t}(d) \\[8pt]
+\sigma^2_{t+1} &amp;= \omega + \alpha R_t^2 + \beta \sigma^2_{t} + \gamma RV^m_t \\[8pt]
+RV^m_t &amp;= \omega_{RV} + \beta_{RV}\sigma^2_t + \varepsilon_t
+\end{align*}`
+
+* VRP Model:
+
+`\begin{equation*}
+R_{t+1} = \alpha + \beta \sigma_\text{VPR} + \varepsilon_{t+1}
+\end{equation*}`
+
+---
+class: center
+background-image: url("../02-Plots/dow-background.jpg")
+background-size: cover
+
+# Thank you!
     </textarea>
 <style data-target="print-only">@media screen {.remark-slide-container{display:block;}.remark-slide-scaler{box-shadow:none;}}</style>
 <script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
@@ -255,7 +368,7 @@ if (window.HTMLWidgets) slideshow.on('afterShowSlide', function (slide) {
     }
     slide_number_div(i).appendChild(timer);
   });
-})(30000);
+})(1200000);
 // adds .remark-code-has-line-highlighted class to <pre> parent elements
 // of code chunks containing highlighted lines with class .remark-code-line-highlighted
 (function(d) {

@@ -1,25 +1,23 @@
 ---
-title: "Realized Higher Moment Measures"
-subtitle: "A data science take on high-frequency financial data"
+title: "A study of variance risk premium"
+subtitle: "Using high-frequency data to study volatility in equity markets"
 author: "Alexis Solis Cancino"
 institute: "ITAM"
-date: "2020/11/04 (updated: `r Sys.Date()`)"
+date: "2020-11-20"
 output:
   xaringan::moon_reader:
-    css: [xaringan-themer.css, ]
+    css: [xaringan-themer.css,my-theme.css]
     lib_dir: libs
     nature:
       highlightStyle: github
       highlightLines: true
-      countdown: 30000
+      countdown: 1200000
       ratio: '16:9'
       countIncrementalSlides: false
       titleSlideClass: ["top"]
 editor_options: 
   chunk_output_type: console
 ---
-background-image: url("../02-Plots/IPC_returns.png")
-background-size: contain
 
 ```{r setup, include=FALSE}
 options(htmltools.dir.version = FALSE)
@@ -28,9 +26,14 @@ library(xaringanExtra)
 library(tidyverse)
 library(arrow)
 library(here)
+library(plotly)
+
+# Source themes
+source(here("05-Resources/ggplot2_themes.R"))
+theme_set(theme_decima())
 
 # Source all code
-# rstudioapi::jobRunScript("../03-HTML/01-Data-Prep/01-Data-Prep-script.R",
+# rstudioapi::jobRunScript(here("03-HTML/01-Data-Prep/01-Data-Prep-script.R"),
                          # exportEnv = "R_GlobalEnv")
 ```
 
@@ -54,6 +57,45 @@ style_duo_accent(
 
 
 
+# What is the [S&P/BMV IPC Index](https://www.spglobal.com/spdji/en/indices/equity/sp-bmv-ipc/#overview)?
+
+```{r, echo = F, fig.asp = 0.5, fig.width = 13, fig.align='center'}
+indices_data <- 
+  
+  # Read Excel file
+  read_excel(path = here("01-Data", "mexbol-vimex.xlsx"),
+             
+             # Specify values for NA
+             na = c("#NA", "#N/A N/A"),
+             
+             # Specify column type
+             col_types = c("date", rep("numeric", 3))
+             ) %>%
+  
+  # Set names for columns
+  set_names(c("date", "mexbol_ipc", "vimex", "ipc_vix")) %>% 
+  
+  # Parse date column
+  mutate(date = ymd(date))
+
+# Build IPC plot
+indices_data %>% 
+  filter(date >= ymd('2010-10-28')) %>% 
+  ggplot(aes(date, mexbol_ipc)) +
+  geom_line(colour = amazing_colors[1], size = 1.1) +
+  scale_y_continuous(labels = scales::number_format(big.mark = ","),
+                     breaks = seq(20*1e3, 60*1e3, 10*1e3),
+                     limits = c(20*1e3, 60*1e3)) +
+  scale_x_date(breaks = "1 years", labels = scales::date_format("%Y")) +
+  labs(
+    title = "S&P/BMV IPC Index (2011 - 2018)",
+    subtitle = "Daily Level",
+    x = NULL,
+    y = NULL
+  ) + theme_decima(font_size = 20)
+
+```
+
 ---
 class: center, middle
 
@@ -69,7 +111,7 @@ IPC <- arrow::read_parquet(here("01-Data/parquet/raw_MEXICO_IPC.parquet"))
 
 # Raw Data
 
-* Intraday data for the *S&P/BMV IPC Equity Index*. 
+* Intraday data for the *S&P/BMV IPC Equity Index* from **Thomson Reuters** (a financial data provider).
 
 .panelset[
 
@@ -85,14 +127,29 @@ IPC %>% dim()
 
 .panel[.panel-name[Time series]
 
-* Time series composed of prices and trades per minute. 
-
 * The data begins in 1996 and goes all the way through the first half of 2018.
 
 ```{r panel-chunk2}
-IPC %>% select(2) %>% slice(1,nrow(IPC)) %>% pull()
+IPC %>% 
+  select(2) %>% 
+  slice(1,nrow(IPC)) %>%
+  pull()
 ```
+
 ]
+
+
+.panel[.panel-name[Intraday]
+
+* Time series composed of prices and trades per minute (**irregular**). 
+
+```{r}
+IPC %>% 
+  select(3) %>% head()
+```
+
+]
+
 
 .panel[.panel-name[Variables]
 
@@ -108,10 +165,227 @@ IPC %>% names()
 
 
 ---
-# Other variables
+# Trades in the data
 
-Here's the rest of the columns.
+.panelset[
 
-```{r}
-IPC %>% select(9:23) %>%  glimpse()
+.panel[.panel-name[Irregular by Hour]
+
+```{r, echo = F, fig.asp = 0.618, fig.width = 10, fig.align='left'}
+IPC_tbl %>% 
+  mutate(tidy_hour = as.factor(hour(tidy_time))) %>% 
+  count(tidy_hour, sort = T, name = "trades_per_hour") %>% 
+  # mutate(tidy_hour = fct_reorder(tidy_hour, .x = trades_per_hour, .desc = T)) %>%
+  ggplot(aes(tidy_hour, trades_per_hour)) +
+  geom_col(aes(fill = between(x = as.numeric(tidy_hour), 
+                              left = 5, 
+                              right = 10)),
+           show.legend = F) +
+  scale_fill_manual(values = amazing_colors[c(2,8)]) +
+  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+  labs(
+    title = "No. Prices per Hour in the Sample",
+    x = "Hour",
+    y = NULL
+  ) + theme_decima(font_size = 18)
 ```
+]
+
+.panel[.panel-name[08:00AM-08:59AM]
+
+```{r, echo = F, fig.asp = 0.618, fig.width = 10, fig.align = 'center'}
+IPC_tbl %>% 
+  mutate(tidy_hour = as.factor(hour(tidy_time)),
+         tidy_minute = minute(tidy_time)) %>%
+  filter(tidy_hour == 8) %>% 
+  count(tidy_minute, sort = T, name = "trades_per_minute") %>% 
+  ggplot(aes(tidy_minute, trades_per_minute)) +
+  geom_col(aes(fill = tidy_minute < 30),
+           show.legend = F) +
+  scale_fill_manual(values = amazing_colors[c(8,2)]) +
+  scale_x_continuous(breaks = seq(0, 60, 5)) +
+  scale_y_continuous(labels = scales::number_format(big.mark = ","),
+                     breaks = c(0, 300, 5000)) +
+  labs(
+    title = "Number of Trades per Minute from 8:00AM-8:59AM",
+    x = "Minute",
+    y = NULL
+  ) + theme_decima(font_size = 18)
+```
+]
+
+
+.panel[.panel-name[03:00PM-03:59PM]
+
+```{r, echo = F, fig.asp = 0.618, fig.width = 10, fig.align = 'right'}
+IPC_tbl %>% 
+  mutate(tidy_hour = as.factor(hour(tidy_time)),
+         tidy_minute = minute(tidy_time)) %>%
+  filter(tidy_hour == 15) %>% 
+  count(tidy_minute, sort = T, name = "trades_per_minute") %>% 
+  ggplot(aes(tidy_minute, trades_per_minute)) +
+  geom_col(aes(fill = trades_per_minute > 2500),
+           show.legend = F) +
+  scale_fill_manual(values = amazing_colors[c(2,8)]) +
+  scale_x_continuous(breaks = seq(0, 60, 5)) +
+  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+    labs(
+    title = "Number of Trades per Minute from 3:00PM-3:59PM",
+    x = "Minute",
+    y = NULL
+  ) + theme_decima(font_size = 18)
+```
+]
+
+]
+
+---
+class: center, middle
+
+# Moving to volatility!
+
+---
+
+# Two "kinds" of volatility
+
+.panelset[
+
+.panel[.panel-name[Realized Volatility]
+
+* The so-called _Realized Variance_ is a volatility-estimate that is calculated using high-frequency data.
+
+* Having $m$ observations within a day, we can estimate the daily variance from intraday squared log-returns simply as:
+
+\begin{equation*}
+RV_{t+1}^m = \sum \limits_{j=1}^{m} R^2_{t+j/m} 
+\end{equation*}
+
+]
+
+.panel[.panel-name[RVs Plot]
+
+```{r, echo = F, fig.asp = 0.618, fig.width = 10, fig.align = 'center'}
+# Read the data
+IPC_fr <- read_parquet(file = here("01-Data", "parquet", "IPC_fr2.parquet"))
+
+RVs <- IPC_fr %>% 
+  mutate(log_ret_sq = log_ret^2) %>% 
+  group_by(index_date) %>% 
+  summarise(RV = sum(log_ret_sq),
+            RV_an = 252 * sqrt(RV)) %>% 
+  
+  # Get rid of date "2001-09-12", which has a 0 RV.
+  filter(!RV == 0)
+
+RVs %>% 
+  # filter_time("1996" ~ "end") %>%
+  ggplot(mapping = aes(x = index_date, y = RV_an)) +
+  geom_point(color = amazing_colors[1], alpha = 0.5) +
+  labs(
+    title = "Ex-ante volatility forecast for the S&P/BMV IPC Index",
+    subtitle = "Annualized t+1 forecast by using the realized volatility",
+    x = NULL,
+    y = "Annualized RV"
+    ) +
+  scale_y_continuous(labels = scales::number_format()) +
+  scale_x_date(date_labels = "%Y", date_breaks = "2 years") +
+  geom_smooth(colour = amazing_colors[2])  + theme_decima(font_size = 18)
+
+```
+]
+
+.panel[.panel-name[Implied Volatility]
+
+* The so-called _implied volatility_ is calculated from equity-options prices. Assuming the pricing model is the _Black-Scholes-Merton_ model, one computes implied volatility as:
+
+\begin{equation*}
+\sigma^{iv}_{\text{BSM}}= c^{-1}_{\text{BSM}}\big(S_t, r_f,X, \tilde T \big)
+\end{equation*}
+
+... that is, by numerically inverting the pricing formula.
+
+
+* Index providers create indices (in a process that uses this equation), called _Volatility Indices_. The _VIMEX_, calculated by MexDer, uses the price of equity options whose underlying asset is precisely the S&P/BMV IPC Index.
+
+]
+
+.panel[.panel-name[VIMEX Plot]
+
+```{r, echo = F, fig.asp = 0.618, fig.width = 10, fig.align = 'center'}
+indices_data %>% 
+  filter(!is.na(vimex), date < ymd('2017-01-01')) %>% 
+  ggplot(aes(date, vimex)) +
+  geom_point(aes(colour = vimex > 35),
+             alpha = 0.6,
+             show.legend = F) +
+  scale_colour_manual(values = amazing_colors[c(8,2)]) +
+  scale_y_continuous(labels = scales::number_format(big.mark = ",")) +
+  scale_x_date(breaks = "2 years", labels = scales::date_format("%Y")) +
+  labs(
+    title = "VIMEX Index (2011 - 2017)",
+    subtitle = "Daily Level",
+    x = NULL,
+    y = NULL
+  ) + theme_decima(font_size = 18)
+```
+
+]
+
+]
+
+---
+class: header_background
+
+# The variance risk premium (VRP)
+
+* Calculated as the difference between realized variance and implied volatility.
+
+\begin{equation*}
+\text{VPR}_{t+1:t+k} = \big(\sigma^{iv}_{t+1:t+k} - RV_{t+1:t+k} \big)
+\end{equation*}
+
+
+* The VRP has shown to be a good predictor for equity returns in the US.
+
+* Would it be a good predictor for Mexican equities?
+
+* This process involves forecasting RV (realized variance) for a horizon of one trading month (21 days).
+
+* HAR (Heterogeneous AutoRegression Model):
+
+\begin{equation*}
+\ln(RV_{t+1:t+k}) = \phi_{0,k}+\phi_{d,k}\ln(RV_{d,k}) +\phi_{w,k}\ln(RV_{w,k})+\phi_{m,k}\ln(RV_{m,k}) + \varepsilon_{t+1:t+k}
+\end{equation*}
+
+where:
+
+\begin{equation*}
+\varepsilon_{t+1:t+k} \sim \mathcal{N}\left(0, k^2 \sigma^2_{\varepsilon}\right)
+\end{equation*}
+
+is the innovation for RV.
+---
+class: header_background
+
+# The Returns Model
+
+* Base model: the Realized GARCH model
+
+\begin{align*}
+R_{t+1} &= \sigma_{t+1}z_{t+1} \quad, \quad z_{t+1} \sim \mathcal{t}(d) \\[8pt]
+\sigma^2_{t+1} &= \omega + \alpha R_t^2 + \beta \sigma^2_{t} + \gamma RV^m_t \\[8pt]
+RV^m_t &= \omega_{RV} + \beta_{RV}\sigma^2_t + \varepsilon_t
+\end{align*}
+
+* VRP Model:
+
+\begin{equation*}
+R_{t+1} = \alpha + \beta \sigma_\text{VPR} + \varepsilon_{t+1}
+\end{equation*}
+
+---
+class: center
+background-image: url("../02-Plots/dow-background.jpg")
+background-size: cover
+
+# Thank you!
