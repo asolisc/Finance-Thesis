@@ -11,7 +11,7 @@ output:
     nature:
       highlightStyle: github
       highlightLines: true
-      countdown: 1200000
+      countdown: 100000
       ratio: '16:9'
       countIncrementalSlides: false
       titleSlideClass: ["top"]
@@ -20,21 +20,31 @@ editor_options:
 ---
 
 ```{r setup, include=FALSE}
-options(htmltools.dir.version = FALSE)
+options(htmltools.dir.version = FALSE,
+        warning = FALSE,
+        message = FALSE)
+
 library(xaringanthemer)
 library(xaringanExtra)
 library(tidyverse)
+library(readxl)
+library(lubridate)
 library(arrow)
 library(here)
-library(plotly)
+
+
+# library(extrafont)
+# font_import()
+# loadfonts(device = "win")
+
 
 # Source themes
 source(here("05-Resources/ggplot2_themes.R"))
-theme_set(theme_decima())
+ggplot2::theme_set(theme_decima())
 
 # Source all code
-# rstudioapi::jobRunScript(here("03-HTML/01-Data-Prep/01-Data-Prep-script.R"),
-                         # exportEnv = "R_GlobalEnv")
+rstudioapi::jobRunScript(here("03-HTML/01-Data-Prep/01-Data-Prep-script.R"),
+                         exportEnv = "R_GlobalEnv")
 ```
 
 ```{r xaringan-tile-view, echo=FALSE}
@@ -167,6 +177,11 @@ IPC %>% names()
 ---
 # Trades in the data
 
+```{r, echo = F}
+IPC_tbl <- read_parquet(file = here("01-Data/parquet/IPC_tbl.parquet"))
+```
+
+
 .panelset[
 
 .panel[.panel-name[Irregular by Hour]
@@ -272,11 +287,15 @@ RVs <- IPC_fr %>%
   mutate(log_ret_sq = log_ret^2) %>% 
   group_by(index_date) %>% 
   summarise(RV = sum(log_ret_sq),
-            RV_an = 252 * sqrt(RV)) %>% 
+            RV_an = 252 * sqrt(RV), 
+            .groups = "drop") %>% 
   
   # Get rid of date "2001-09-12", which has a 0 RV.
   filter(!RV == 0)
+```
 
+
+```{r echo = F, fig.asp=0.618, fig.width=10, message=FALSE, fig.align='center'}
 RVs %>% 
   # filter_time("1996" ~ "end") %>%
   ggplot(mapping = aes(x = index_date, y = RV_an)) +

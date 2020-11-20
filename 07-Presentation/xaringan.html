@@ -61,6 +61,10 @@ class: header_background
 * 2M+ observations (`n = 2,133,890`) and `k = 23` variables. 
 
 
+```r
+IPC %&gt;% dim()
+```
+
 ```
 ## [1] 2133890      23
 ```
@@ -71,6 +75,13 @@ class: header_background
 
 * The data begins in 1996 and goes all the way through the first half of 2018.
 
+
+```r
+IPC %&gt;% 
+  select(2) %&gt;% 
+  slice(1,nrow(IPC)) %&gt;%
+  pull()
+```
 
 ```
 ## [1] 19960102 20180605
@@ -83,6 +94,11 @@ class: header_background
 
 * Time series composed of prices and trades per minute (**irregular**). 
 
+
+```r
+IPC %&gt;% 
+  select(3) %&gt;% head()
+```
 
 ```
 ## # A tibble: 6 x 1
@@ -101,6 +117,10 @@ class: header_background
 
 .panel[.panel-name[Variables]
 
+
+```r
+IPC %&gt;% names()
+```
 
 ```
 ##  [1] "#RIC"                  "Date[L]"               "Time[L]"              
@@ -123,22 +143,25 @@ class: header_background
 ---
 # Trades in the data
 
+
+
+
 .panelset[
 
 .panel[.panel-name[Irregular by Hour]
 
-&lt;img src="xaringan_files/figure-html/unnamed-chunk-5-1.png" style="display: block; margin: auto auto auto 0;" /&gt;
+&lt;img src="xaringan_files/figure-html/unnamed-chunk-6-1.png" style="display: block; margin: auto auto auto 0;" /&gt;
 ]
 
 .panel[.panel-name[08:00AM-08:59AM]
 
-&lt;img src="xaringan_files/figure-html/unnamed-chunk-6-1.png" style="display: block; margin: auto;" /&gt;
+&lt;img src="xaringan_files/figure-html/unnamed-chunk-7-1.png" style="display: block; margin: auto;" /&gt;
 ]
 
 
 .panel[.panel-name[03:00PM-03:59PM]
 
-&lt;img src="xaringan_files/figure-html/unnamed-chunk-7-1.png" style="display: block; margin: auto 0 auto auto;" /&gt;
+&lt;img src="xaringan_files/figure-html/unnamed-chunk-8-1.png" style="display: block; margin: auto 0 auto auto;" /&gt;
 ]
 
 ]
@@ -168,7 +191,10 @@ RV_{t+1}^m = \sum \limits_{j=1}^{m} R^2_{t+j/m}
 
 .panel[.panel-name[RVs Plot]
 
-&lt;img src="xaringan_files/figure-html/unnamed-chunk-8-1.png" style="display: block; margin: auto;" /&gt;
+
+
+
+&lt;img src="xaringan_files/figure-html/unnamed-chunk-10-1.png" style="display: block; margin: auto;" /&gt;
 ]
 
 .panel[.panel-name[Implied Volatility]
@@ -188,7 +214,7 @@ RV_{t+1}^m = \sum \limits_{j=1}^{m} R^2_{t+j/m}
 
 .panel[.panel-name[VIMEX Plot]
 
-&lt;img src="xaringan_files/figure-html/unnamed-chunk-9-1.png" style="display: block; margin: auto;" /&gt;
+&lt;img src="xaringan_files/figure-html/unnamed-chunk-11-1.png" style="display: block; margin: auto;" /&gt;
 
 ]
 
@@ -368,7 +394,7 @@ if (window.HTMLWidgets) slideshow.on('afterShowSlide', function (slide) {
     }
     slide_number_div(i).appendChild(timer);
   });
-})(1200000);
+})(100000);
 // adds .remark-code-has-line-highlighted class to <pre> parent elements
 // of code chunks containing highlighted lines with class .remark-code-line-highlighted
 (function(d) {
