@@ -57,6 +57,7 @@ library(scales)
 library(cowplot)
 # library(plotly)
 library(gt)
+library(progress)
 
 # Reproducibility
 library(usethis)
@@ -96,7 +97,8 @@ RVs <- IPC_fr %>%
   mutate(log_ret_sq = log_ret^2) %>% 
   group_by(index_date) %>% 
   summarise(RV = sum(log_ret_sq),
-            RV_an = 252 * sqrt(RV)) %>% 
+            RV_an = 252 * sqrt(RV),
+            .group = "drop") %>% 
   
   # Get rid of date "2001-09-12", which has a 0 RV.
   filter(!RV == 0)
@@ -113,7 +115,7 @@ rv_plot <- RVs %>%
   geom_point(color = amazing_colors[1], alpha = 0.5) +
   labs(
     title = "Intraday Volatility for the S&P/BMV IPC Index",
-    subtitle = "As measured by the annualized daily-realized-variance",
+    subtitle = "As measured by the annualized daily-realized-volatility",
     x = NULL,
     y = "Annualized RV"
     ) +
@@ -136,16 +138,45 @@ rv_plot
 # )
 ```
 
+
+```{r}
+RVs %>% 
+  pull(RV) %>% 
+  acf(lag.max = 100, plot = F) %>% 
+  broom::tidy() %>% 
+  filter(lag != 0) %>% 
+  ggplot(aes(lag, acf)) +
+  geom_line()
+```
+
+
+
 ## RV Sparse
 
 An *RV Sparse* estimator consists of calculating the realized variance but with a sample that is less frequent than the 1-minute grid. Instead, it is sampled in an *s*-minute grid (where $s \geq 1$).
 
 Here, we will use different combinations of $s$ such as `s = 5`, `s = 10`, `s = 15`, and `s = 30`. In order to plot a *signature plot*, we will also sample from $s \in [1, 120]$.
 
+
+
+```{r}
+# Define progress bar
+pb <- progress::progress_bar$new(
+  format = " computing RVs [:bar] :percent eta: :eta",
+  total = 100,
+  clear = FALSE
+)
+```
+
+
+
 ```{r}
 get_RV_sparse <- function(.grid_vec, 
                           .ret_tbl = IPC_fr, 
                           .index_by = index_date) {
+
+  # Print progress bar
+  # pb$tick()
   
   # Define rolling sum function
   roll_sum <- slidify(
@@ -166,7 +197,8 @@ get_RV_sparse <- function(.grid_vec,
     group_by({{ .index_by }}) %>% 
     summarise(
       RV_sparse = sum(log_ret_sq),
-      RV_sparse_an = 252 * sqrt(RV_sparse)
+      RV_sparse_an = 252 * sqrt(RV_sparse),
+      .groups = "drop"
       # "RVs{{ .grid_vec }}" := sum(log_ret_sq),
       # "RVs{{ .grid_vec }}_an" := 252 * sqrt(eval(as.name(paste0("RVs", {{.grid_vec}}))))
       )
@@ -190,7 +222,7 @@ This is where *volatility signature plots* (VSP) will help; these are a graphica
 
 1.  Compute $RV_{t+1}^s$ for values of $s$ going from 1 to 120 minutes.
 
-```{r get-all-RV-sparse}
+```{r get-all-RV-sparse, cache=T}
 # Define a vector with all the "s-grid" parameters
 sparse_grid <- seq(from = 1, 
                    to = 240, 
@@ -213,7 +245,8 @@ all_RV_sparse <- nested_RV_sparse %>% unnest(cols = c(my_result))
 RV_means <- all_RV_sparse %>% 
   group_by(s_grid) %>% 
   summarise(
-    mean_RV_sparse = mean(RV_sparse_an)
+    mean_RV_sparse = mean(RV_sparse),
+    .groups = "drop"
   )
 ```
 
