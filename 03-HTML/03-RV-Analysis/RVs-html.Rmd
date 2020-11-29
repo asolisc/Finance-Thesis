@@ -252,7 +252,8 @@ sparse_grid <- seq(from = 1,
 
 # Create a tibble with all the nested data
 nested_RV_sparse <- tibble(
-  my_result = sparse_grid %>% future_map(.f = ~ get_RV_sparse(.sparse = .)),
+  my_result = sparse_grid %>% future_map(.f = ~ get_RV_sparse(.sparse = .),
+                                         .progress = TRUE),
   s_grid = sparse_grid
 )
 ```
