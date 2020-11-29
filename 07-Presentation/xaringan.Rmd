@@ -6,7 +6,7 @@ institute: "ITAM"
 date: "2020-11-20"
 output:
   xaringan::moon_reader:
-    css: [xaringan-themer.css,my-theme.css]
+    css: [xaringan-themer.css, my-theme.css]
     lib_dir: libs
     nature:
       highlightStyle: github
@@ -43,8 +43,8 @@ source(here("05-Resources/ggplot2_themes.R"))
 ggplot2::theme_set(theme_decima())
 
 # Source all code
-rstudioapi::jobRunScript(here("03-HTML/01-Data-Prep/01-Data-Prep-script.R"),
-                         exportEnv = "R_GlobalEnv")
+# rstudioapi::jobRunScript(here("03-HTML/01-Data-Prep/01-Data-Prep-script.R"),
+                         # exportEnv = "R_GlobalEnv")
 ```
 
 ```{r xaringan-tile-view, echo=FALSE}
