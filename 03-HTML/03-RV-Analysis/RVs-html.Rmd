@@ -79,9 +79,9 @@ source(here("05-Resources", "ggplot2_themes.R"))
 IPC_fr <- read_parquet(file = here("01-Data", "parquet", "IPC_fr2.parquet"))
 ```
 
-# Realized Variance
+# Realized Volatility
 
-For this section, we'll transform our dataset into a `timetibble` object, so that time filtering and wrangling of the data is easier. We'll call the new dataset `IPC_fr` (IPC tibble time).
+To estimate daily volatility of equity returns, we can use the intraday data, in particular, the intraday returns. Since the expected value of the intraday returns is zero, a good estimator of variance is 
 
 ```{r}
 # IPC_fr <- IPC_fr %>%  
@@ -97,8 +97,8 @@ RVs <- IPC_fr %>%
   mutate(log_ret_sq = log_ret^2) %>% 
   group_by(index_date) %>% 
   summarise(RV = sum(log_ret_sq),
-            RV_an = 252 * sqrt(RV),
-            .group = "drop") %>% 
+            RV_an = sqrt(252 * RV),
+            .groups = "drop") %>% 
   
   # Get rid of date "2001-09-12", which has a 0 RV.
   filter(!RV == 0)
@@ -111,20 +111,32 @@ Now let's plot the RVs:
 ```{r, layout="l-body-outset", fig.width=8, fig.asp=0.618}
 rv_plot <- RVs %>% 
   # filter_time("1996" ~ "end") %>%
-  ggplot(mapping = aes(x = index_date, y = RV_an)) +
-  geom_point(color = amazing_colors[1], alpha = 0.5) +
+  ggplot(mapping = aes(x = index_date, y = RV)) +
+  geom_col(color = amazing_colors[8]) +
   labs(
-    title = "Intraday Volatility for the S&P/BMV IPC Index",
-    subtitle = "As measured by the annualized daily-realized-volatility",
+    title = "Intraday Variance for the S&P/BMV IPC Index",
+    subtitle = "Daily Realized Variance",
     x = NULL,
-    y = "Annualized RV"
+    y = NULL
     ) +
   scale_y_continuous(labels = scales::number_format()) +
-  scale_x_date(date_labels = "%Y", date_breaks = "2 years") +
-  geom_smooth(colour = amazing_colors[2])
+                     # limits = c(0, 0.005)) +
+  scale_x_date(date_labels = "%Y", date_breaks = "2 years")
+  # geom_smooth(colour = amazing_colors[2])
 
 rv_plot
 ```
+
+
+
+
+```{r}
+RVs %>% 
+    filter(RV > 0.001)
+```
+
+
+
 
 ```{r}
 # ggsave(
@@ -171,7 +183,7 @@ pb <- progress::progress_bar$new(
 
 
 ```{r}
-get_RV_sparse <- function(.grid_vec, 
+get_RV_sparse <- function(.sparse, 
                           .ret_tbl = IPC_fr, 
                           .index_by = index_date) {
 
@@ -181,7 +193,7 @@ get_RV_sparse <- function(.grid_vec,
   # Define rolling sum function
   roll_sum <- slidify(
     .f = ~sum(.x), 
-    .period = .grid_vec, 
+    .period = .sparse, 
     .align = "right")
   
   # Define new return table
@@ -189,7 +201,7 @@ get_RV_sparse <- function(.grid_vec,
     mutate(ret_grid = roll_sum(log_ret)) %>% 
     select({{ .index_by }}, ret_grid) %>%
     filter(!is.na(ret_grid)) %>% 
-    slice(seq(1, nrow(.ret_tbl), by = .grid_vec))
+    slice(seq(1, nrow(.ret_tbl), by = .sparse))
   
   # Define new RV table
   new_RV_tbl <- new_ret_tbl %>% 
@@ -197,10 +209,10 @@ get_RV_sparse <- function(.grid_vec,
     group_by({{ .index_by }}) %>% 
     summarise(
       RV_sparse = sum(log_ret_sq),
-      RV_sparse_an = 252 * sqrt(RV_sparse),
+      RV_sparse_an = sqrt(252 * RV_sparse),
       .groups = "drop"
-      # "RVs{{ .grid_vec }}" := sum(log_ret_sq),
-      # "RVs{{ .grid_vec }}_an" := 252 * sqrt(eval(as.name(paste0("RVs", {{.grid_vec}}))))
+      # "RVs{{ .sparse }}" := sum(log_ret_sq),
+      # "RVs{{ .sparse }}_an" := 252 * sqrt(eval(as.name(paste0("RVs", {{.sparse}}))))
       )
   
   return(new_RV_tbl)
@@ -215,6 +227,11 @@ The Sparse RV Estimator is calculated using an *s*-minute grid ($s \geq 1$):
 $$ 
 RV_{t+1}^s = \sum \limits_{j=1}^{m/s} R^2_{t+js/m} 
 $$
+
+```{r}
+get_RV_sparse(.sparse = 5)
+```
+
 
 Now the problem lies in the choice of the sub-sampling parameter $s$, a problem which represents a typical bias-variance trade-off. That is because ...
 
@@ -231,7 +248,7 @@ sparse_grid <- seq(from = 1,
 
 # Create a tibble with all the nested data
 nested_RV_sparse <- tibble(
-  my_result = sparse_grid %>% map(.f = ~ get_RV_sparse(.grid_vec = .)),
+  my_result = sparse_grid %>% map(.f = ~ get_RV_sparse(.sparse = .)),
   s_grid = sparse_grid
 )
 ```
