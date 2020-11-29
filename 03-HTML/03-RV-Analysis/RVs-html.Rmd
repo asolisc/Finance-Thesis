@@ -68,7 +68,11 @@ library(here)
 # library(data.table)
 # library(dtplyr)
 library(arrow)
+library(furrr)
 
+
+# Setup parallelization plan
+future::plan(strategy = multiprocess, workers = 11)
 
 # --- Setup the ggplot theme ---
 source(here("05-Resources", "ggplot2_themes.R"))
@@ -248,7 +252,7 @@ sparse_grid <- seq(from = 1,
 
 # Create a tibble with all the nested data
 nested_RV_sparse <- tibble(
-  my_result = sparse_grid %>% map(.f = ~ get_RV_sparse(.sparse = .)),
+  my_result = sparse_grid %>% future_map(.f = ~ get_RV_sparse(.sparse = .)),
   s_grid = sparse_grid
 )
 ```
