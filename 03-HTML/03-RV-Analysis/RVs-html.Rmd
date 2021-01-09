@@ -290,6 +290,19 @@ RV_means %>%
 
 3.  Look for the smallest $s$ such that the average RV does not change much for values of $s$ larger than this number.
 
+
+
+# HAR Model
+
+The HAR (Heterogeneous AutoRegressive) model...
+
+
+
+
+
+
+
+
 ## Average RV Estimator
 
 We can also sample with an *s*-minute grid, but every *k* minutes. Here, we employ several combinations of these: make use of `s = 5` and `s = 10` minute samples every `k = 1` minute, and `s = 15` + `s = 30` minute samples every `k = 5` minutes. We also try `s = 15` every `k = 1` minute and `s = 10` every `k = 2`.
