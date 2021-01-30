@@ -118,7 +118,7 @@ rv_plot <- RVs %>%
   ggplot(mapping = aes(x = index_date, y = RV)) +
   geom_col(color = amazing_colors[8]) +
   labs(
-    title = "Intraday Variance for the S&P/BMV IPC Index",
+    title = "S&P/BMV IPC Index's Volatility",
     subtitle = "Daily Realized Variance",
     x = NULL,
     y = NULL
@@ -136,10 +136,8 @@ rv_plot
 
 ```{r}
 RVs %>% 
-    filter(RV > 0.001)
+    filter(RV   > 0.001)
 ```
-
-
 
 
 ```{r}
@@ -162,7 +160,21 @@ RVs %>%
   broom::tidy() %>% 
   filter(lag != 0) %>% 
   ggplot(aes(lag, acf)) +
-  geom_line()
+  geom_line(colour = amazing_colors[3]) +
+  scale_x_continuous(breaks = seq(0,100, 10)) +
+  labs(
+    title = "Autocorrelation of realized variance",
+    x = "lag",
+    y = NULL
+  ) 
+```
+
+
+```{r}
+RVs %>% 
+  mutate(log_rv = log(RV)) %>% 
+  ggplot(aes(log_rv)) +
+  geom_histogram(bins = 40)
 ```
 
 
@@ -246,10 +258,12 @@ This is where *volatility signature plots* (VSP) will help; these are a graphica
 ```{r get-all-RV-sparse, cache=T}
 # Define a vector with all the "s-grid" parameters
 sparse_grid <- seq(from = 1, 
-                   to = 240, 
+                   to = 2, 
                    by = 1)
+```
 
 
+```{r get-all-RV-sparse, cache=T}
 # Create a tibble with all the nested data
 nested_RV_sparse <- tibble(
   my_result = sparse_grid %>% future_map(.f = ~ get_RV_sparse(.sparse = .),
