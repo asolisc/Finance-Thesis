@@ -498,37 +498,36 @@ rm(joined_tbl)
 rm(IPC_tbl)
 ```
 
-## 2.5 Setting Overnight Returns to Zero
+## 2.5 Setting Overnight Returns to NA
 
-Another aspect that we want to take into account is: the fact that the overnight return should not be taken into account. Therefore, we set the first log-return of each day to zero. Once again, we store these values in a new object called `nor_tbl` (which stands for *no overnight returns tibble*).
+Another aspect that we want to take into account is: the fact that the overnight return should not be calculated. Therefore, we set the first log-return of each day to `NA`. The choice of `NA` because it will be useful for data-wrangling purposes. Once again, we store these values in a new object called `nor_tbl` (which stands for *no overnight returns tibble*).
 
 ```{r}
 nor_tbl <- returns_tbl %>% 
    
   mutate(log_ret = ifelse(test = date_change == FALSE,
                           yes = log_ret, 
-                          no = 0))
+                          no = NA))
 # Remove old df
 # rm(IPC_tfr_tbl)
 ```
 
-Our first log-return should be zero, but we have `NA`. Let's check that this is the only `NA`:
+We should only have one `NA` value per day. Let's check that it is the case. We do that by checking that both numbers are equal, if that's the case, we'll get a `TRUE` value as output.
 
 ```{r}
-nor_tbl %>% 
+total_na <- nor_tbl %>% 
   filter(is.na(log_ret)) %>% 
-  select(index_date, log_ret)
+  nrow()
+
+total_dates <- nor_tbl %>% 
+  distinct(index_date) %>% 
+  nrow()
+
+# Check for equality
+all.equal(total_na, total_dates)
 ```
 
-It is indeed our only `NA`. We can set it to zero.
-
-```{r}
-nor_tbl$log_ret[1] <- 0
-
-nor_tbl
-```
-
-We can check that all overnight returns are zero. The variable `date_change` from the *time series index* is useful here. We extract the distinct values of the `log_ret` variable along with the `date_change` variable. We should get that all values for `date_change` are `TRUE`, and all values for `log_ret` are `0`.
+We can check that all overnight returns are `NA`s. The variable `date_change` from the *time series index* is useful here. We extract the distinct values of the `log_ret` variable along with the `date_change` variable. We should get that all values for `date_change` are `TRUE`, and all values for `log_ret` are `NA`.
 
 ```{r}
 nor_tbl %>% 
@@ -536,12 +535,13 @@ nor_tbl %>%
   distinct(log_ret, date_change) 
 ```
 
-Moreover, the number of overnight returns that have been set to zero should be one less than the number of different dates we have for the `tidy_date` variable. Let's check if this holds true:
+Moreover, the number of overnight returns that have been set to `NA` should be one less than the number of different dates we have for the `tidy_date` variable. Let's check if this holds true:
 
 ```{r}
 nor_tbl %>% 
   filter(date_change == TRUE) %>% 
-  select(index_date, log_ret, date_change)
+  select(index_date, log_ret, date_change) %>% 
+  nrow()
 ```
 
 We have `5,612` datapoints where `date_change = TRUE`. This should be one less than the amount of different dates (one less because the first date doesn't have `date_change` set to one).
@@ -550,7 +550,7 @@ We have `5,612` datapoints where `date_change = TRUE`. This should be one less t
 nor_tbl %>% distinct(index_date) %>% nrow()
 ```
 
-Thus, we see that this holds true. We have correctly set the overnight returns to zero.
+Thus, we see that this holds true. We have correctly set the overnight returns to `NA`.
 
 ```{r plotting-returns, cache = T}
 returns_plot <- nor_tbl %>% 
