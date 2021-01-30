@@ -170,14 +170,6 @@ RVs %>%
 ```
 
 
-```{r}
-RVs %>% 
-  mutate(log_rv = log(RV)) %>% 
-  ggplot(aes(log_rv)) +
-  geom_histogram(bins = 40)
-```
-
-
 
 ## RV Sparse
 
