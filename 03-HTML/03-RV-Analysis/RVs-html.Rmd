@@ -98,6 +98,7 @@ We can now compute the realized variance for each day:
 
 ```{r}
 RVs <- IPC_fr %>% 
+  filter(!is.na(log_ret)) %>% 
   mutate(log_ret_sq = log_ret^2) %>% 
   group_by(index_date) %>% 
   summarise(RV = sum(log_ret_sq),
@@ -126,7 +127,7 @@ rv_plot <- RVs %>%
   scale_y_continuous(labels = scales::number_format()) +
                      # limits = c(0, 0.005)) +
   scale_x_date(date_labels = "%Y", date_breaks = "2 years")
-  # geom_smooth(colour = amazing_colors[2])
+  # geom_smooth(color = amazing_colors[2])
 
 rv_plot
 ```
@@ -136,7 +137,7 @@ rv_plot
 
 ```{r}
 RVs %>% 
-    filter(RV   > 0.001)
+    filter(RV > 0.001)
 ```
 
 
@@ -191,6 +192,54 @@ pb <- progress::progress_bar$new(
 
 
 ```{r}
+get_rv_sparse <- function(.sparse, 
+                          .ret_tbl = IPC_fr, 
+                          .index_by = index_date) {
+  
+  # Define new return table
+  new_ret_tbl <- .ret_tbl %>% 
+  
+  # Filter the prices according to the needed grid. Remove date_change = T.
+  filter(
+    minute %% .sparse == 0,
+    date_change == FALSE | is.na(date_change)
+  ) %>% 
+  
+  # Compute the s-grid return
+  mutate(sparse_return = log(last_price/lag(last_price))) %>% 
+  
+  # Keep select columns
+  select(index_date, index_time, sparse_return) %>% 
+  
+  # Remove NA value for sparse_return (only the first one should be NA) 
+  filter(
+    !is.na(sparse_return)
+  )
+  
+  # Define new RV table
+  new_RV_tbl <- new_ret_tbl %>% 
+    mutate(log_ret_sq = sparse_return^2) %>% 
+    group_by({{ .index_by }}) %>% 
+    summarise(
+      RV_sparse = sum(log_ret_sq),
+      RV_sparse_an = sqrt(252 * RV_sparse),
+      .groups = "drop"
+      # "RVs{{ .sparse }}" := sum(log_ret_sq),
+      # "RVs{{ .sparse }}_an" := 252 * sqrt(eval(as.name(paste0("RVs", {{.sparse}}))))
+    )
+  
+  return(new_RV_tbl)
+}
+```
+
+
+```{r}
+get_rv_sparse(.sparse = 5)
+```
+
+
+
+```{r}
 get_RV_sparse <- function(.sparse, 
                           .ret_tbl = IPC_fr, 
                           .index_by = index_date) {
@@ -200,7 +249,7 @@ get_RV_sparse <- function(.sparse,
   
   # Define rolling sum function
   roll_sum <- slidify(
-    .f = ~sum(.x), 
+    .f = ~ sum(.x), 
     .period = .sparse, 
     .align = "right")
   
@@ -250,7 +299,7 @@ This is where *volatility signature plots* (VSP) will help; these are a graphica
 ```{r get-all-RV-sparse, cache=T}
 # Define a vector with all the "s-grid" parameters
 sparse_grid <- seq(from = 1, 
-                   to = 2, 
+                   to = 60, 
                    by = 1)
 ```
 
@@ -258,7 +307,7 @@ sparse_grid <- seq(from = 1,
 ```{r get-all-RV-sparse, cache=T}
 # Create a tibble with all the nested data
 nested_RV_sparse <- tibble(
-  my_result = sparse_grid %>% future_map(.f = ~ get_RV_sparse(.sparse = .),
+  my_result = sparse_grid %>% future_map(.f = ~ get_rv_sparse(.sparse = .),
                                          .progress = TRUE),
   s_grid = sparse_grid
 )
